@@ -20,7 +20,8 @@ namespace HospitalSystem.Views
         public PatientsView()
         {
             InitializeComponent();
-            LoadPatients(null);
+            btnSearch.Click += (s, e) => LoadPatients(txtSearch.Text.Trim());
+            LoadPatients("");
         }
 
         private void InitializeComponent()
@@ -28,13 +29,20 @@ namespace HospitalSystem.Views
             this.Dock = DockStyle.Fill;
             this.BackColor = Color.FromArgb(243, 244, 246);
 
-            // ========== LEFT PANEL (list) ==========
+            SplitContainer split = new SplitContainer();
+            split.Dock = DockStyle.Fill;
+            split.Orientation = Orientation.Vertical;
+            split.SplitterDistance = 700;
+            split.FixedPanel = FixedPanel.Panel1;
+            split.BackColor = Color.FromArgb(243, 244, 246);
+            this.Controls.Add(split);
+
+            // LEFT
             Panel left = new Panel();
-            left.Dock = DockStyle.Left;
-            left.Width = 560;
-            left.Padding = new Padding(0, 0, 15, 0);
+            left.Dock = DockStyle.Fill;
+            left.Padding = new Padding(0, 0, 10, 0);
             left.BackColor = Color.FromArgb(243, 244, 246);
-            this.Controls.Add(left);
+            split.Panel1.Controls.Add(left);
 
             Label lblList = new Label();
             lblList.Text = "Patient List";
@@ -46,21 +54,20 @@ namespace HospitalSystem.Views
 
             txtSearch = new TextBox();
             txtSearch.Location = new Point(0, 40);
-            txtSearch.Size = new Size(340, 28);
+            txtSearch.Size = new Size(280, 28);
             txtSearch.Font = new Font("Segoe UI", 10F);
             left.Controls.Add(txtSearch);
 
             btnSearch = new Button();
             btnSearch.Text = "Search";
-            btnSearch.Location = new Point(350, 38);
-            btnSearch.Size = new Size(85, 30);
+            btnSearch.Location = new Point(290, 38);
+            btnSearch.Size = new Size(80, 30);
             btnSearch.FlatStyle = FlatStyle.Flat;
-            btnSearch.Click += (s, e) => LoadPatients(txtSearch.Text.Trim());
             left.Controls.Add(btnSearch);
 
             btnNew = new Button();
             btnNew.Text = "+ New";
-            btnNew.Location = new Point(445, 38);
+            btnNew.Location = new Point(380, 38);
             btnNew.Size = new Size(90, 30);
             btnNew.BackColor = Color.FromArgb(37, 99, 235);
             btnNew.ForeColor = Color.White;
@@ -85,13 +92,13 @@ namespace HospitalSystem.Views
             grid.SelectionChanged += Grid_SelectionChanged;
             left.Controls.Add(grid);
 
-            // ========== RIGHT PANEL (form) ==========
+            // RIGHT
             Panel right = new Panel();
             right.Dock = DockStyle.Fill;
             right.BackColor = Color.White;
             right.Padding = new Padding(25);
             right.BorderStyle = BorderStyle.FixedSingle;
-            this.Controls.Add(right);
+            split.Panel2.Controls.Add(right);
 
             lblFormTitle = new Label();
             lblFormTitle.Text = "Register New Patient";
@@ -102,7 +109,6 @@ namespace HospitalSystem.Views
             right.Controls.Add(lblFormTitle);
 
             int y = 65;
-
             AddLabel(right, "Full Name *", 25, y);
             txtName = AddTextBox(right, 25, y + 22, 320);
             y += 65;
@@ -150,8 +156,6 @@ namespace HospitalSystem.Views
             btnSave.Cursor = Cursors.Hand;
             btnSave.Click += BtnSave_Click;
             right.Controls.Add(btnSave);
-
-            left.BringToFront();
         }
 
         private void AddLabel(Control parent, string text, int x, int y)
@@ -186,7 +190,6 @@ namespace HospitalSystem.Views
                     p.PatientNo.ToLower().Contains(filter) ||
                     (p.Contact != null && p.Contact.Contains(filter)));
             }
-
             grid.DataSource = source.Select(p => new
             {
                 p.Id,
@@ -197,7 +200,6 @@ namespace HospitalSystem.Views
                 p.Contact,
                 Blood = p.BloodType
             }).ToList();
-
             if (grid.Columns["Id"] != null)
                 grid.Columns["Id"].Visible = false;
         }
@@ -207,11 +209,9 @@ namespace HospitalSystem.Views
             if (grid.CurrentRow == null || grid.CurrentRow.Index < 0) return;
             var idObj = grid.CurrentRow.Cells["Id"].Value;
             if (idObj == null) return;
-
             selectedId = Convert.ToInt32(idObj);
             var p = HospitalData.GetPatient(selectedId);
             if (p == null) return;
-
             lblFormTitle.Text = "Update Patient – " + p.PatientNo;
             txtName.Text = p.FullName;
             txtAge.Text = p.Age.ToString();
@@ -224,6 +224,8 @@ namespace HospitalSystem.Views
 
         private void BtnNew_Click(object sender, EventArgs e)
         {
+            grid.SelectionChanged -= Grid_SelectionChanged;
+
             selectedId = 0;
             lblFormTitle.Text = "Register New Patient";
             txtName.Clear();
@@ -233,7 +235,12 @@ namespace HospitalSystem.Views
             cmbGender.SelectedIndex = -1;
             cmbBlood.SelectedIndex = -1;
             btnSave.Text = "Save Patient";
+
             grid.ClearSelection();
+            if (grid.CurrentCell != null)
+                grid.CurrentCell = null;
+
+            grid.SelectionChanged += Grid_SelectionChanged;
             txtName.Focus();
         }
 
@@ -245,7 +252,6 @@ namespace HospitalSystem.Views
                 txtName.Focus();
                 return;
             }
-
             int age;
             if (!int.TryParse(txtAge.Text, out age) || age <= 0 || age > 150)
             {
@@ -253,7 +259,6 @@ namespace HospitalSystem.Views
                 txtAge.Focus();
                 return;
             }
-
             if (selectedId == 0)
             {
                 HospitalData.AddPatient(new Patient
@@ -281,7 +286,6 @@ namespace HospitalSystem.Views
                     MessageBox.Show("Patient updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 }
             }
-
             LoadPatients(txtSearch.Text.Trim());
             BtnNew_Click(null, null);
         }
