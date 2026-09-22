@@ -5,11 +5,6 @@ using HospitalSystem.Models;
 
 namespace HospitalSystem.Data
 {
-    /// <summary>
-    /// In-memory data store.
-    /// All lists live only while the application is running.
-    /// Replace this class later with a real database layer if needed.
-    /// </summary>
     public static class HospitalData
     {
         public static List<User> Users { get; private set; } = new List<User>();
@@ -19,6 +14,7 @@ namespace HospitalSystem.Data
         public static List<Appointment> Appointments { get; private set; } = new List<Appointment>();
         public static List<Admission> Admissions { get; private set; } = new List<Admission>();
         public static List<Bed> Beds { get; private set; } = new List<Bed>();
+        public static List<Alert> Alerts { get; private set; } = new List<Alert>();
 
         public static User CurrentUser { get; set; }
 
@@ -43,12 +39,12 @@ namespace HospitalSystem.Data
             Departments.Add(new Department { Id = 3, Name = "Surgery" });
             Departments.Add(new Department { Id = 4, Name = "Cardiology" });
 
-            // Doctors
-            Doctors.Add(new Doctor { Id = 1, FullName = "Ana Reyes", DepartmentId = 1, Specialization = "Internal Medicine" });
-            Doctors.Add(new Doctor { Id = 2, FullName = "Mark Villanueva", DepartmentId = 1, Specialization = "Family Medicine" });
-            Doctors.Add(new Doctor { Id = 3, FullName = "Liza Tan", DepartmentId = 2, Specialization = "Pediatrics" });
-            Doctors.Add(new Doctor { Id = 4, FullName = "Jose Cruz", DepartmentId = 3, Specialization = "General Surgery" });
-            Doctors.Add(new Doctor { Id = 5, FullName = "Grace Lim", DepartmentId = 4, Specialization = "Cardiology" });
+            // Doctors (with On Duty)
+            Doctors.Add(new Doctor { Id = 1, FullName = "Ana Reyes", DepartmentId = 1, Specialization = "Internal Medicine", IsOnDuty = true });
+            Doctors.Add(new Doctor { Id = 2, FullName = "Mark Villanueva", DepartmentId = 1, Specialization = "Family Medicine", IsOnDuty = true });
+            Doctors.Add(new Doctor { Id = 3, FullName = "Liza Tan", DepartmentId = 2, Specialization = "Pediatrics", IsOnDuty = false });
+            Doctors.Add(new Doctor { Id = 4, FullName = "Jose Cruz", DepartmentId = 3, Specialization = "General Surgery", IsOnDuty = true });
+            Doctors.Add(new Doctor { Id = 5, FullName = "Grace Lim", DepartmentId = 4, Specialization = "Cardiology", IsOnDuty = false });
 
             // Beds (12 beds across 6 rooms)
             string[] wards = { "General Ward", "Private", "ICU" };
@@ -102,10 +98,35 @@ namespace HospitalSystem.Data
                 BloodType = "B+",
                 RegisteredOn = DateTime.Today.AddDays(-2)
             });
+
+            // Sample Emergency Alerts
+            Alerts.Add(new Alert
+            {
+                Id = 1,
+                Title = "ICU Bed Critical",
+                Message = "Only 1 ICU bed remaining",
+                Severity = "High",
+                CreatedOn = DateTime.Now.AddHours(-2)
+            });
+            Alerts.Add(new Alert
+            {
+                Id = 2,
+                Title = "Staff Shortage",
+                Message = "Pediatrics has no doctor on duty",
+                Severity = "Medium",
+                CreatedOn = DateTime.Now.AddHours(-5)
+            });
+            Alerts.Add(new Alert
+            {
+                Id = 3,
+                Title = "Equipment Maintenance",
+                Message = "X-Ray machine scheduled for maintenance tomorrow",
+                Severity = "Low",
+                CreatedOn = DateTime.Now.AddDays(-1)
+            });
         }
 
         // -------------------- Authentication --------------------
-
         public static User Authenticate(string username, string password)
         {
             return Users.FirstOrDefault(u =>
@@ -114,19 +135,16 @@ namespace HospitalSystem.Data
         }
 
         // -------------------- Patients --------------------
-
         public static Patient AddPatient(Patient p)
         {
             p.Id = ++_patientSeq;
-            p.RegisteredOn = DateTime.Now;
+            if (p.RegisteredOn == default)
+                p.RegisteredOn = DateTime.Now;
             Patients.Add(p);
             return p;
         }
 
-        public static Patient GetPatient(int id)
-        {
-            return Patients.FirstOrDefault(x => x.Id == id);
-        }
+        public static Patient GetPatient(int id) => Patients.FirstOrDefault(x => x.Id == id);
 
         public static string PatientName(int id)
         {
@@ -135,7 +153,6 @@ namespace HospitalSystem.Data
         }
 
         // -------------------- Appointments --------------------
-
         public static Appointment AddAppointment(Appointment a)
         {
             a.Id = ++_appointmentSeq;
@@ -153,7 +170,6 @@ namespace HospitalSystem.Data
         }
 
         // -------------------- Admissions --------------------
-
         public static Admission AddAdmission(Admission a)
         {
             a.Id = ++_admissionSeq;
@@ -179,22 +195,12 @@ namespace HospitalSystem.Data
                 bed.IsOccupied = false;
         }
 
-        public static List<Admission> ActiveAdmissions()
-        {
-            return Admissions.Where(a => a.Status == "Active").ToList();
-        }
+        public static List<Admission> ActiveAdmissions() => Admissions.Where(a => a.Status == "Active").ToList();
 
         // -------------------- Beds & Helpers --------------------
+        public static Bed GetBed(int id) => Beds.FirstOrDefault(b => b.Id == id);
 
-        public static Bed GetBed(int id)
-        {
-            return Beds.FirstOrDefault(b => b.Id == id);
-        }
-
-        public static List<Bed> AvailableBeds()
-        {
-            return Beds.Where(b => !b.IsOccupied).ToList();
-        }
+        public static List<Bed> AvailableBeds() => Beds.Where(b => !b.IsOccupied).ToList();
 
         public static string BedLabel(int id)
         {
@@ -202,10 +208,7 @@ namespace HospitalSystem.Data
             return b != null ? b.Label : "(Unknown)";
         }
 
-        public static Doctor GetDoctor(int id)
-        {
-            return Doctors.FirstOrDefault(d => d.Id == id);
-        }
+        public static Doctor GetDoctor(int id) => Doctors.FirstOrDefault(d => d.Id == id);
 
         public static string DoctorName(int id)
         {
@@ -213,15 +216,21 @@ namespace HospitalSystem.Data
             return d != null ? "Dr. " + d.FullName : "(Unknown)";
         }
 
-        public static Department GetDepartment(int id)
-        {
-            return Departments.FirstOrDefault(d => d.Id == id);
-        }
+        public static Department GetDepartment(int id) => Departments.FirstOrDefault(d => d.Id == id);
 
         public static string DepartmentName(int id)
         {
             var d = GetDepartment(id);
             return d != null ? d.Name : "(Unknown)";
         }
+
+        // -------------------- New Dashboard Helpers --------------------
+        public static int OccupiedBedsCount() => Beds.Count(b => b.IsOccupied);
+        public static int TotalBedsCount() => Beds.Count;
+        public static double OccupancyRate() => TotalBedsCount() == 0 ? 0 : (double)OccupiedBedsCount() / TotalBedsCount() * 100;
+
+        public static List<Doctor> DoctorsOnDuty() => Doctors.Where(d => d.IsOnDuty).ToList();
+
+        public static List<Alert> ActiveAlerts() => Alerts.OrderByDescending(a => a.CreatedOn).ToList();
     }
 }
