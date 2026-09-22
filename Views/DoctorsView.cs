@@ -8,21 +8,19 @@ using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
 {
-    public class PatientsView : UserControl
+    public class DoctorsView : UserControl
     {
         // Philippine mobile format: 09171234567 or +639171234567
         private static readonly Regex PhoneRegex = new Regex(@"^(09\d{9}|\+639\d{9})$");
-        private const string SearchPlaceholder = "Search patients by ID, name, or contact...";
+        private const string SearchPlaceholder = "Search doctors by ID, name, specialization...";
 
         private DataGridView grid;
         private TextBox txtSearch;
         private Button btnSearch, btnClear, btnNew;
         private Label lblCount;
-        private Panel header;
-        private Label lblList;
         private bool searchPlaceholderActive = true;
 
-        public PatientsView()
+        public DoctorsView()
         {
             InitializeComponent();
 
@@ -35,7 +33,7 @@ namespace HospitalSystem.Views
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
-                LoadPatients("");
+                LoadDoctors("");
         }
 
         // Deliberately kept OUT of InitializeComponent(): the WinForms Designer
@@ -47,147 +45,101 @@ namespace HospitalSystem.Views
         {
             btnSearch.Click += BtnSearch_Click;
             btnClear.Click += BtnClear_Click;
-            btnNew.Click += BtnNewPatient_Click;
+            btnNew.Click += BtnNewDoctor_Click;
             txtSearch.KeyDown += TxtSearch_KeyDown;
             grid.CellClick += Grid_CellClick;
             grid.CellFormatting += Grid_CellFormatting;
         }
 
-        private void BtnSearch_Click(object sender, EventArgs e) => LoadPatients(GetSearchText());
+        private void BtnSearch_Click(object sender, EventArgs e) => LoadDoctors(GetSearchText());
 
         private void BtnClear_Click(object sender, EventArgs e)
         {
             ClearSearchBox();
-            LoadPatients("");
+            LoadDoctors("");
         }
 
-        private void BtnNewPatient_Click(object sender, EventArgs e) => OpenEditForm(null);
+        private void BtnNewDoctor_Click(object sender, EventArgs e) => OpenEditForm(null);
 
         private void InitializeComponent()
         {
-            this.header = new System.Windows.Forms.Panel();
-            this.lblList = new System.Windows.Forms.Label();
-            this.txtSearch = new System.Windows.Forms.TextBox();
-            this.btnSearch = new System.Windows.Forms.Button();
-            this.btnClear = new System.Windows.Forms.Button();
-            this.btnNew = new System.Windows.Forms.Button();
-            this.lblCount = new System.Windows.Forms.Label();
-            this.grid = new System.Windows.Forms.DataGridView();
-            this.header.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.grid)).BeginInit();
-            this.SuspendLayout();
-            // 
-            // header
-            // 
-            this.header.Controls.Add(this.lblList);
-            this.header.Controls.Add(this.txtSearch);
-            this.header.Controls.Add(this.btnSearch);
-            this.header.Controls.Add(this.btnClear);
-            this.header.Controls.Add(this.btnNew);
-            this.header.Controls.Add(this.lblCount);
-            this.header.Dock = System.Windows.Forms.DockStyle.Top;
-            this.header.Location = new System.Drawing.Point(15, 15);
-            this.header.Name = "header";
-            this.header.Size = new System.Drawing.Size(797, 90);
-            this.header.TabIndex = 0;
-            // 
-            // lblList
-            // 
-            this.lblList.AutoSize = true;
-            this.lblList.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold);
-            this.lblList.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(41)))), ((int)(((byte)(59)))));
-            this.lblList.Location = new System.Drawing.Point(0, 0);
-            this.lblList.Name = "lblList";
-            this.lblList.Size = new System.Drawing.Size(107, 25);
-            this.lblList.TabIndex = 0;
-            this.lblList.Text = "Patient List";
-            // 
-            // txtSearch
-            // 
-            this.txtSearch.Font = new System.Drawing.Font("Segoe UI", 10F);
-            this.txtSearch.Location = new System.Drawing.Point(0, 36);
-            this.txtSearch.Name = "txtSearch";
-            this.txtSearch.Size = new System.Drawing.Size(360, 25);
-            this.txtSearch.TabIndex = 1;
-            // 
-            // btnSearch
-            // 
-            this.btnSearch.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
-            this.btnSearch.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.btnSearch.FlatAppearance.BorderSize = 0;
-            this.btnSearch.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnSearch.ForeColor = System.Drawing.Color.White;
-            this.btnSearch.Location = new System.Drawing.Point(368, 35);
-            this.btnSearch.Name = "btnSearch";
-            this.btnSearch.Size = new System.Drawing.Size(85, 32);
-            this.btnSearch.TabIndex = 2;
-            this.btnSearch.Text = "Search";
-            this.btnSearch.UseVisualStyleBackColor = false;
-            // 
-            // btnClear
-            // 
-            this.btnClear.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.btnClear.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnClear.Location = new System.Drawing.Point(461, 35);
-            this.btnClear.Name = "btnClear";
-            this.btnClear.Size = new System.Drawing.Size(75, 32);
-            this.btnClear.TabIndex = 3;
-            this.btnClear.Text = "Clear";
-            // 
-            // btnNew
-            // 
-            this.btnNew.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(5)))), ((int)(((byte)(150)))), ((int)(((byte)(105)))));
-            this.btnNew.Cursor = System.Windows.Forms.Cursors.Hand;
-            this.btnNew.FlatAppearance.BorderSize = 0;
-            this.btnNew.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnNew.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
-            this.btnNew.ForeColor = System.Drawing.Color.White;
-            this.btnNew.Location = new System.Drawing.Point(544, 35);
-            this.btnNew.Name = "btnNew";
-            this.btnNew.Size = new System.Drawing.Size(140, 32);
-            this.btnNew.TabIndex = 4;
-            this.btnNew.Text = "+ New Patient";
-            this.btnNew.UseVisualStyleBackColor = false;
-            // 
-            // lblCount
-            // 
-            this.lblCount.AutoSize = true;
-            this.lblCount.Font = new System.Drawing.Font("Segoe UI", 8.5F);
-            this.lblCount.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
-            this.lblCount.Location = new System.Drawing.Point(0, 72);
-            this.lblCount.Name = "lblCount";
-            this.lblCount.Size = new System.Drawing.Size(0, 15);
-            this.lblCount.TabIndex = 5;
-            // 
-            // grid
-            // 
-            this.grid.AllowUserToAddRows = false;
-            this.grid.AllowUserToDeleteRows = false;
-            this.grid.AllowUserToResizeRows = false;
-            this.grid.BackgroundColor = System.Drawing.Color.White;
-            this.grid.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.grid.Location = new System.Drawing.Point(15, 15);
-            this.grid.MultiSelect = false;
-            this.grid.Name = "grid";
-            this.grid.ReadOnly = true;
-            this.grid.RowHeadersVisible = false;
-            this.grid.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.grid.Size = new System.Drawing.Size(797, 361);
-            this.grid.TabIndex = 1;
-            // 
-            // PatientsView
-            // 
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
-            this.Controls.Add(this.header);
-            this.Controls.Add(this.grid);
-            this.Name = "PatientsView";
-            this.Padding = new System.Windows.Forms.Padding(15);
-            this.Size = new System.Drawing.Size(827, 391);
-            this.header.ResumeLayout(false);
-            this.header.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.grid)).EndInit();
-            this.ResumeLayout(false);
+            this.Dock = DockStyle.Fill;
+            this.BackColor = Color.FromArgb(243, 244, 246);
+            this.Padding = new Padding(15);
 
+            // ===================== Header: title + search + actions =====================
+            Panel header = new Panel();
+            header.Dock = DockStyle.Top;
+            header.Height = 90;
+            this.Controls.Add(header);
+
+            Label lblList = new Label();
+            lblList.Text = "Doctors";
+            lblList.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
+            lblList.ForeColor = Color.FromArgb(30, 41, 59);
+            lblList.Location = new Point(0, 0);
+            lblList.AutoSize = true;
+            header.Controls.Add(lblList);
+
+            txtSearch = new TextBox();
+            txtSearch.Location = new Point(0, 36);
+            txtSearch.Size = new Size(360, 30);
+            txtSearch.Font = new Font("Segoe UI", 10F);
+            header.Controls.Add(txtSearch);
+
+            btnSearch = new Button();
+            btnSearch.Text = "Search";
+            btnSearch.Location = new Point(368, 35);
+            btnSearch.Size = new Size(85, 32);
+            btnSearch.BackColor = Color.FromArgb(37, 99, 235);
+            btnSearch.ForeColor = Color.White;
+            btnSearch.FlatStyle = FlatStyle.Flat;
+            btnSearch.FlatAppearance.BorderSize = 0;
+            btnSearch.Cursor = Cursors.Hand;
+            header.Controls.Add(btnSearch);
+
+            btnClear = new Button();
+            btnClear.Text = "Clear";
+            btnClear.Location = new Point(461, 35);
+            btnClear.Size = new Size(75, 32);
+            btnClear.FlatStyle = FlatStyle.Flat;
+            btnClear.Cursor = Cursors.Hand;
+            header.Controls.Add(btnClear);
+
+            btnNew = new Button();
+            btnNew.Text = "+ New Doctor";
+            btnNew.Location = new Point(544, 35);
+            btnNew.Size = new Size(140, 32);
+            btnNew.BackColor = Color.FromArgb(5, 150, 105);
+            btnNew.ForeColor = Color.White;
+            btnNew.FlatStyle = FlatStyle.Flat;
+            btnNew.FlatAppearance.BorderSize = 0;
+            btnNew.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+            btnNew.Cursor = Cursors.Hand;
+            header.Controls.Add(btnNew);
+
+            lblCount = new Label();
+            lblCount.Location = new Point(0, 72);
+            lblCount.AutoSize = true;
+            lblCount.Font = new Font("Segoe UI", 8.5F);
+            lblCount.ForeColor = Color.FromArgb(107, 114, 128);
+            header.Controls.Add(lblCount);
+
+            // ===================== Doctor List (full width) =====================
+            grid = new DataGridView();
+            grid.Dock = DockStyle.Fill;
+            grid.AllowUserToAddRows = false;
+            grid.AllowUserToDeleteRows = false;
+            grid.ReadOnly = true;
+            grid.AutoGenerateColumns = false;
+            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+            grid.MultiSelect = false;
+            grid.RowHeadersVisible = false;
+            grid.BackgroundColor = Color.White;
+            grid.BorderStyle = BorderStyle.FixedSingle;
+            grid.AllowUserToResizeRows = false;
+            this.Controls.Add(grid);
+            grid.BringToFront();
         }
 
         private void BuildGridColumns()
@@ -203,7 +155,7 @@ namespace HospitalSystem.Views
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
                 Name = "colNo",
-                HeaderText = "Patient No.",
+                HeaderText = "Doctor ID",
                 DataPropertyName = "No",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 Width = 100
@@ -214,23 +166,23 @@ namespace HospitalSystem.Views
                 HeaderText = "Full Name",
                 DataPropertyName = "Name",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-                MinimumWidth = 180
+                MinimumWidth = 160
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
-                Name = "colAge",
-                HeaderText = "Age",
-                DataPropertyName = "Age",
+                Name = "colSpecialization",
+                HeaderText = "Specialization",
+                DataPropertyName = "Specialization",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 55
+                Width = 150
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
-                Name = "colGender",
-                HeaderText = "Gender",
-                DataPropertyName = "Gender",
+                Name = "colDepartment",
+                HeaderText = "Department",
+                DataPropertyName = "Department",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 85
+                Width = 140
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -239,14 +191,6 @@ namespace HospitalSystem.Views
                 DataPropertyName = "Contact",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
                 Width = 125
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colBlood",
-                HeaderText = "Blood Type",
-                DataPropertyName = "Blood",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 85
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -325,47 +269,47 @@ namespace HospitalSystem.Views
             if (e.KeyCode == Keys.Enter)
             {
                 e.SuppressKeyPress = true;
-                LoadPatients(GetSearchText());
+                LoadDoctors(GetSearchText());
             }
         }
 
         // ===================== List loading =====================
-        private void LoadPatients(string filter)
+        private void LoadDoctors(string filter)
         {
-            var active = HospitalData.ActivePatients();
+            var active = HospitalData.ActiveDoctors();
             var source = active.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(filter))
             {
                 string f = filter.ToLower();
-                source = source.Where(p =>
-                    p.FullName.ToLower().Contains(f) ||
-                    p.PatientNo.ToLower().Contains(f) ||
-                    (p.Contact != null && p.Contact.Contains(f)));
+                source = source.Where(d =>
+                    d.FullName.ToLower().Contains(f) ||
+                    d.DoctorNo.ToLower().Contains(f) ||
+                    (d.Specialization != null && d.Specialization.ToLower().Contains(f)) ||
+                    HospitalData.DepartmentName(d.DepartmentId).ToLower().Contains(f) ||
+                    (d.Contact != null && d.Contact.Contains(f)));
             }
 
             var rows = source
-                .OrderBy(p => p.Id)
-                .Select(p => new
+                .OrderBy(d => d.Id)
+                .Select(d => new
                 {
-                    p.Id,
-                    No = p.PatientNo,
-                    Name = p.FullName,
-                    p.Age,
-                    p.Gender,
-                    p.Contact,
-                    Blood = p.BloodType,
-                    p.Status
+                    d.Id,
+                    No = d.DoctorNo,
+                    Name = d.FullName,
+                    d.Specialization,
+                    Department = HospitalData.DepartmentName(d.DepartmentId),
+                    d.Contact,
+                    d.Status
                 }).ToList();
 
             // Rebinding a DataGridView straight to a fresh List<> (rather than a
             // BindingList/BindingSource) can leave the grid showing a stale subset
-            // of rows after several rebinds - confirmed via live UI Automation that
-            // Rows itself is always fully correct; the visible viewport anchor
-            // (FirstDisplayedScrollingRowIndex) doesn't reset on its own when a
-            // filtered (smaller) result set is replaced by a larger one, so the
-            // grid can keep painting from a stale scroll offset left over from the
-            // previous, smaller bind. Fully clearing the old binding, resetting the
-            // scroll anchor, then forcing a repaint avoids it.
+            // of rows after several rebinds - confirmed via live UI Automation on
+            // PatientsView that Rows itself is always fully correct; the visible
+            // viewport anchor (FirstDisplayedScrollingRowIndex) doesn't reset on its
+            // own when a filtered (smaller) result set is replaced by a larger one.
+            // Fully clearing the old binding, resetting the scroll anchor, then
+            // forcing a repaint avoids it.
             grid.DataSource = null;
             grid.DataSource = rows;
             if (grid.Rows.Count > 0)
@@ -377,12 +321,12 @@ namespace HospitalSystem.Views
             if (grid.CurrentCell != null)
                 grid.CurrentCell = null;
 
-            string noun = rows.Count == 1 ? "patient" : "patients";
+            string noun = rows.Count == 1 ? "doctor" : "doctors";
             lblCount.Text = $"Showing {rows.Count} of {active.Count} {noun}";
         }
 
         // ===================== Row / action routing =====================
-        // Exactly one patient-related interface is open at a time:
+        // Exactly one doctor-related interface is open at a time:
         // clicking a row opens Details; Edit/Delete act directly from the list.
         private void Grid_CellClick(object sender, DataGridViewCellEventArgs e)
         {
@@ -397,7 +341,7 @@ namespace HospitalSystem.Views
                     OpenEditForm(id);
                     break;
                 case "colDelete":
-                    DeletePatientFlow(id);
+                    DeleteDoctorFlow(id);
                     break;
                 default:
                     ShowDetails(id);
@@ -407,11 +351,11 @@ namespace HospitalSystem.Views
 
         private void ShowDetails(int id)
         {
-            var p = HospitalData.GetPatient(id);
-            if (p == null) return;
+            var d = HospitalData.GetDoctor(id);
+            if (d == null) return;
 
             bool editRequested;
-            using (var dlg = new PatientDetailsDialog(p))
+            using (var dlg = new DoctorDetailsDialog(d))
             {
                 dlg.ShowDialog(this);
                 editRequested = dlg.EditRequested;
@@ -424,57 +368,57 @@ namespace HospitalSystem.Views
 
         private void OpenEditForm(int? id)
         {
-            Patient existing = id.HasValue ? HospitalData.GetPatient(id.Value) : null;
+            Doctor existing = id.HasValue ? HospitalData.GetDoctor(id.Value) : null;
 
-            using (var dlg = new PatientFormDialog(existing))
+            using (var dlg = new DoctorFormDialog(existing))
             {
                 dlg.ShowDialog(this);
                 if (dlg.Saved)
-                    LoadPatients(GetSearchText());
+                    LoadDoctors(GetSearchText());
             }
         }
 
-        private void DeletePatientFlow(int id)
+        private void DeleteDoctorFlow(int id)
         {
-            var p = HospitalData.GetPatient(id);
-            if (p == null) return;
+            var d = HospitalData.GetDoctor(id);
+            if (d == null) return;
 
-            if (HospitalData.HasActiveAdmission(id))
+            if (HospitalData.UpcomingAppointmentCountForDoctor(id) > 0)
             {
                 MessageBox.Show(
-                    "This patient currently has an active admission and must be discharged before they can be deleted.",
+                    "This doctor has upcoming appointment(s) scheduled and cannot be deleted until those are completed or cancelled.",
                     "Cannot Delete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            int apptCount = HospitalData.AppointmentCountForPatient(id);
-            int admCount = HospitalData.AdmissionCountForPatient(id);
+            int apptCount = HospitalData.AppointmentCountForDoctor(id);
+            int admCount = HospitalData.AdmissionCountForDoctor(id);
 
-            string message = "Are you sure you want to delete this patient?";
+            string message = "Are you sure you want to delete this doctor?";
             if (apptCount > 0 || admCount > 0)
             {
-                message += $"\n\nThis patient has {apptCount} appointment(s) and {admCount} admission(s) on record. " +
-                           "To preserve that history, the patient will be deactivated instead of permanently deleted.";
+                message += $"\n\nThis doctor has {apptCount} appointment(s) and {admCount} admission(s) on record. " +
+                           "To preserve that history, the doctor will be deactivated instead of permanently deleted.";
             }
 
             if (MessageBox.Show(message, "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
-            HospitalData.DeletePatient(p);
-            MessageBox.Show("Patient deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            HospitalData.DeleteDoctor(d);
+            MessageBox.Show("Doctor deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
-            LoadPatients(GetSearchText());
+            LoadDoctors(GetSearchText());
         }
 
-        // ===================== Patient Details dialog (modal) =====================
-        private class PatientDetailsDialog : Form
+        // ===================== Doctor Details dialog (modal) =====================
+        private class DoctorDetailsDialog : Form
         {
             public bool EditRequested { get; private set; } = false;
 
-            public PatientDetailsDialog(Patient p)
+            public DoctorDetailsDialog(Doctor d)
             {
-                this.Text = "Patient Details";
-                this.Size = new Size(440, 540);
+                this.Text = "Doctor Details";
+                this.Size = new Size(440, 480);
                 this.StartPosition = FormStartPosition.CenterParent;
                 this.FormBorderStyle = FormBorderStyle.FixedDialog;
                 this.MaximizeBox = false;
@@ -489,7 +433,7 @@ namespace HospitalSystem.Views
 
                 Label lblName = new Label
                 {
-                    Text = p.FullName,
+                    Text = "Dr. " + d.FullName,
                     ForeColor = Color.White,
                     Font = new Font("Segoe UI", 13F, FontStyle.Bold),
                     Location = new Point(20, 10),
@@ -499,7 +443,7 @@ namespace HospitalSystem.Views
 
                 Label lblNo = new Label
                 {
-                    Text = p.PatientNo + "  •  " + p.Status,
+                    Text = d.DoctorNo + "  •  " + d.Status + (d.IsOnDuty ? "  •  On Duty" : "  •  Off Duty"),
                     ForeColor = Color.FromArgb(191, 219, 254),
                     Font = new Font("Segoe UI", 9.5F),
                     Location = new Point(20, 36),
@@ -522,23 +466,21 @@ namespace HospitalSystem.Views
                 this.Controls.Add(body);
                 body.BringToFront();
 
-                int apptCount = HospitalData.AppointmentCountForPatient(p.Id);
-                int admCount = HospitalData.AdmissionCountForPatient(p.Id);
-                bool hasActiveAdmission = HospitalData.HasActiveAdmission(p.Id);
+                int apptCount = HospitalData.AppointmentCountForDoctor(d.Id);
+                int upcomingCount = HospitalData.UpcomingAppointmentCountForDoctor(d.Id);
 
-                AddRow(body, "Patient ID", p.PatientNo);
-                AddRow(body, "Full Name", p.FullName);
-                AddRow(body, "Age", p.Age.ToString());
-                AddRow(body, "Gender", p.Gender ?? "-");
-                AddRow(body, "Contact", p.Contact ?? "-");
-                AddRow(body, "Address", string.IsNullOrWhiteSpace(p.Address) ? "-" : p.Address);
-                AddRow(body, "Blood Type", p.BloodType ?? "-");
-                AddRow(body, "Registered On", p.RegisteredOn.ToString("MMM dd, yyyy"));
-                AddRow(body, "Number of Appointments", apptCount.ToString());
-                AddRow(body, "Number of Admissions", admCount.ToString() + (hasActiveAdmission ? " (1 active)" : ""));
+                AddRow(body, "Doctor ID", d.DoctorNo);
+                AddRow(body, "Full Name", "Dr. " + d.FullName);
+                AddRow(body, "Specialization", d.Specialization ?? "-");
+                AddRow(body, "Department", HospitalData.DepartmentName(d.DepartmentId));
+                AddRow(body, "Contact", d.Contact ?? "-");
+                AddRow(body, "Status", d.Status);
+                AddRow(body, "Duty Status", d.IsOnDuty ? "On Duty" : "Off Duty");
+                AddRow(body, "Total Appointments", apptCount.ToString());
+                AddRow(body, "Upcoming Appointments", upcomingCount.ToString());
 
                 Button btnEdit = new Button();
-                btnEdit.Text = "Edit Patient";
+                btnEdit.Text = "Edit Doctor";
                 btnEdit.Size = new Size(120, 36);
                 btnEdit.Location = new Point(this.ClientSize.Width - 250, 11);
                 btnEdit.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
@@ -590,21 +532,22 @@ namespace HospitalSystem.Views
             }
         }
 
-        // ===================== Add / Update Patient dialog (modal) =====================
-        private class PatientFormDialog : Form
+        // ===================== Add / Update Doctor dialog (modal) =====================
+        private class DoctorFormDialog : Form
         {
             private readonly int selectedId;
-            private TextBox txtName, txtAge, txtContact, txtAddress;
-            private ComboBox cmbGender, cmbBlood;
+            private TextBox txtName, txtSpecialization, txtContact;
+            private ComboBox cmbDepartment;
+            private CheckBox chkOnDuty;
             private Button btnSave, btnCancel;
 
             public bool Saved { get; private set; } = false;
 
-            public PatientFormDialog(Patient existing)
+            public DoctorFormDialog(Doctor existing)
             {
                 selectedId = existing?.Id ?? 0;
 
-                this.Text = existing == null ? "Add New Patient" : "Update Patient";
+                this.Text = existing == null ? "Add New Doctor" : "Update Doctor";
                 this.Size = new Size(420, 500);
                 this.StartPosition = FormStartPosition.CenterParent;
                 this.FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -614,7 +557,7 @@ namespace HospitalSystem.Views
 
                 Label lblTitle = new Label
                 {
-                    Text = existing == null ? "Add New Patient" : "Update Patient – " + existing.PatientNo,
+                    Text = existing == null ? "Add New Doctor" : "Update Doctor – " + existing.DoctorNo,
                     Font = new Font("Segoe UI", 13F, FontStyle.Bold),
                     ForeColor = Color.FromArgb(30, 41, 59),
                     Location = new Point(25, 18),
@@ -627,41 +570,39 @@ namespace HospitalSystem.Views
                 txtName = AddTextBox(25, y + 22, 330);
                 y += 65;
 
-                AddLabel("Age *", 25, y);
-                txtAge = AddTextBox(25, y + 22, 100);
-
-                AddLabel("Gender *", 150, y);
-                cmbGender = new ComboBox();
-                cmbGender.Location = new Point(150, y + 22);
-                cmbGender.Size = new Size(205, 28);
-                cmbGender.DropDownStyle = ComboBoxStyle.DropDownList;
-                cmbGender.Font = new Font("Segoe UI", 10F);
-                cmbGender.Items.AddRange(new object[] { "Male", "Female", "Other" });
-                this.Controls.Add(cmbGender);
+                AddLabel("Specialization", 25, y);
+                txtSpecialization = AddTextBox(25, y + 22, 330);
                 y += 65;
 
-                AddLabel("Contact *", 25, y);
+                AddLabel("Department *", 25, y);
+                cmbDepartment = new ComboBox();
+                cmbDepartment.Location = new Point(25, y + 22);
+                cmbDepartment.Size = new Size(330, 28);
+                cmbDepartment.DropDownStyle = ComboBoxStyle.DropDownList;
+                cmbDepartment.Font = new Font("Segoe UI", 10F);
+                cmbDepartment.DataSource = HospitalData.Departments.ToList();
+                cmbDepartment.DisplayMember = "Name";
+                cmbDepartment.ValueMember = "Id";
+                cmbDepartment.SelectedIndex = -1;
+                this.Controls.Add(cmbDepartment);
+                y += 65;
+
+                AddLabel("Contact", 25, y);
                 txtContact = AddTextBox(25, y + 22, 330);
                 txtContact.MaxLength = 13;
                 AddHint("e.g. 09171234567", 25, y + 52);
                 y += 78;
 
-                AddLabel("Address", 25, y);
-                txtAddress = AddTextBox(25, y + 22, 330);
-                y += 65;
-
-                AddLabel("Blood Type", 25, y);
-                cmbBlood = new ComboBox();
-                cmbBlood.Location = new Point(25, y + 22);
-                cmbBlood.Size = new Size(130, 28);
-                cmbBlood.DropDownStyle = ComboBoxStyle.DropDownList;
-                cmbBlood.Font = new Font("Segoe UI", 10F);
-                cmbBlood.Items.AddRange(new object[] { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" });
-                this.Controls.Add(cmbBlood);
-                y += 80;
+                chkOnDuty = new CheckBox();
+                chkOnDuty.Text = "Currently on duty";
+                chkOnDuty.Location = new Point(25, y);
+                chkOnDuty.AutoSize = true;
+                chkOnDuty.Font = new Font("Segoe UI", 10F);
+                this.Controls.Add(chkOnDuty);
+                y += 45;
 
                 btnSave = new Button();
-                btnSave.Text = existing == null ? "Save Patient" : "Save Changes";
+                btnSave.Text = existing == null ? "Save Doctor" : "Save Changes";
                 btnSave.Location = new Point(25, y);
                 btnSave.Size = new Size(150, 40);
                 btnSave.BackColor = Color.FromArgb(37, 99, 235);
@@ -689,11 +630,10 @@ namespace HospitalSystem.Views
                 if (existing != null)
                 {
                     txtName.Text = existing.FullName;
-                    txtAge.Text = existing.Age.ToString();
+                    txtSpecialization.Text = existing.Specialization ?? "";
                     txtContact.Text = existing.Contact ?? "";
-                    txtAddress.Text = existing.Address ?? "";
-                    cmbGender.SelectedItem = existing.Gender;
-                    cmbBlood.SelectedItem = existing.BloodType;
+                    cmbDepartment.SelectedValue = existing.DepartmentId;
+                    chkOnDuty.Checked = existing.IsOnDuty;
                 }
 
                 this.AcceptButton = btnSave;
@@ -744,28 +684,15 @@ namespace HospitalSystem.Views
                     return false;
                 }
 
-                if (!int.TryParse(txtAge.Text.Trim(), out int age) || age <= 0 || age > 120)
+                if (cmbDepartment.SelectedValue == null)
                 {
-                    error = "Please enter a valid age (1-120).";
-                    focusTarget = txtAge;
-                    return false;
-                }
-
-                if (cmbGender.SelectedIndex == -1)
-                {
-                    error = "Please select a gender.";
-                    focusTarget = cmbGender;
+                    error = "Please select a department.";
+                    focusTarget = cmbDepartment;
                     return false;
                 }
 
                 string contact = txtContact.Text.Trim();
-                if (string.IsNullOrWhiteSpace(contact))
-                {
-                    error = "Contact number is required.";
-                    focusTarget = txtContact;
-                    return false;
-                }
-                if (!PhoneRegex.IsMatch(contact))
+                if (!string.IsNullOrWhiteSpace(contact) && !PhoneRegex.IsMatch(contact))
                 {
                     error = "Contact must be a valid PH mobile number, e.g. 09171234567 or +639171234567.";
                     focusTarget = txtContact;
@@ -784,43 +711,41 @@ namespace HospitalSystem.Views
                     return;
                 }
 
-                int age = int.Parse(txtAge.Text.Trim());
+                int departmentId = Convert.ToInt32(cmbDepartment.SelectedValue);
 
                 try
                 {
                     if (selectedId == 0)
                     {
-                        var created = HospitalData.AddPatient(new Patient
+                        var created = HospitalData.AddDoctor(new Doctor
                         {
                             FullName = txtName.Text.Trim(),
-                            Age = age,
-                            Gender = cmbGender.SelectedItem.ToString(),
+                            DepartmentId = departmentId,
+                            Specialization = txtSpecialization.Text.Trim(),
                             Contact = txtContact.Text.Trim(),
-                            Address = txtAddress.Text.Trim(),
-                            BloodType = cmbBlood.SelectedItem != null ? cmbBlood.SelectedItem.ToString() : null
+                            IsOnDuty = chkOnDuty.Checked
                         });
-                        MessageBox.Show($"Patient registered successfully as {created.PatientNo}.", "Success",
+                        MessageBox.Show($"Doctor registered successfully as {created.DoctorNo}.", "Success",
                             MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else
                     {
-                        var p = HospitalData.GetPatient(selectedId);
-                        if (p != null)
+                        var d = HospitalData.GetDoctor(selectedId);
+                        if (d != null)
                         {
-                            p.FullName = txtName.Text.Trim();
-                            p.Age = age;
-                            p.Gender = cmbGender.SelectedItem.ToString();
-                            p.Contact = txtContact.Text.Trim();
-                            p.Address = txtAddress.Text.Trim();
-                            p.BloodType = cmbBlood.SelectedItem != null ? cmbBlood.SelectedItem.ToString() : null;
-                            HospitalData.UpdatePatient(p);
-                            MessageBox.Show("Patient updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            d.FullName = txtName.Text.Trim();
+                            d.DepartmentId = departmentId;
+                            d.Specialization = txtSpecialization.Text.Trim();
+                            d.Contact = txtContact.Text.Trim();
+                            d.IsOnDuty = chkOnDuty.Checked;
+                            HospitalData.UpdateDoctor(d);
+                            MessageBox.Show("Doctor updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
                 }
                 catch (MySql.Data.MySqlClient.MySqlException ex)
                 {
-                    MessageBox.Show("A database error occurred while saving this patient:\n" + ex.Message,
+                    MessageBox.Show("A database error occurred while saving this doctor:\n" + ex.Message,
                         "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }

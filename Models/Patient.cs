@@ -11,12 +11,15 @@ namespace HospitalSystem.Models
         public string Contact { get; set; }
         public string Address { get; set; }
         public string BloodType { get; set; }
+        public string Status { get; set; } = "Active";
         public DateTime RegisteredOn { get; set; }
 
         public string PatientNo
         {
             get { return "P-" + Id.ToString("D4"); }
         }
+
+        public bool IsActive => Status != "Inactive";
 
         public override string ToString()
         {

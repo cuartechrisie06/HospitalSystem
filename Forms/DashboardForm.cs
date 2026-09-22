@@ -15,6 +15,7 @@ namespace HospitalSystem.Forms
         private Label lblUser;
         private Button btnDashboard;
         private Button btnPatients;
+        private Button btnDoctors;
         private Button btnAppointments;
         private Button btnAdmissions;
         private Button btnSignOut;
@@ -23,8 +24,45 @@ namespace HospitalSystem.Forms
         public DashboardForm()
         {
             InitializeComponent();
-            UpdateUserLabel();
-            ShowOverview();
+
+            // Pure UI, no DB - safe (and desirable) to build even at design time
+            // so the sidebar actually renders in the Designer.
+            BuildSidebarNav();
+
+            // The Designer instantiates this class to render it at design time;
+            // data loading must never run then, or it tries to open a DB connection.
+            if (!DesignTimeHelper.IsDesignMode)
+            {
+                UpdateUserLabel();
+                ShowOverview();
+            }
+        }
+
+        // Builds the sidebar nav buttons via the CreateNavButton() helper.
+        // Kept out of InitializeComponent(): the Designer's InitializeComponent
+        // parser only understands flat control-creation statements, not calls
+        // into custom factory methods.
+        private void BuildSidebarNav()
+        {
+            btnDashboard = CreateNavButton("Dashboard", 70);
+            btnDashboard.Click += BtnDashboard_Click;
+            panelSidebar.Controls.Add(btnDashboard);
+
+            btnPatients = CreateNavButton("Patients", 120);
+            btnPatients.Click += BtnPatients_Click;
+            panelSidebar.Controls.Add(btnPatients);
+
+            btnDoctors = CreateNavButton("Doctors", 170);
+            btnDoctors.Click += BtnDoctors_Click;
+            panelSidebar.Controls.Add(btnDoctors);
+
+            btnAppointments = CreateNavButton("Appointments", 220);
+            btnAppointments.Click += BtnAppointments_Click;
+            panelSidebar.Controls.Add(btnAppointments);
+
+            btnAdmissions = CreateNavButton("Admissions", 270);
+            btnAdmissions.Click += BtnAdmissions_Click;
+            panelSidebar.Controls.Add(btnAdmissions);
         }
 
         private void UpdateUserLabel()
@@ -36,12 +74,14 @@ namespace HospitalSystem.Forms
 
         private void DashboardForm_Load(object sender, EventArgs e)
         {
+            if (DesignTimeHelper.IsDesignMode) return;
             UpdateUserLabel();
             ShowOverview();
         }
 
         private void BtnDashboard_Click(object sender, EventArgs e) => ShowOverview();
         private void BtnPatients_Click(object sender, EventArgs e) => ShowView(new Views.PatientsView());
+        private void BtnDoctors_Click(object sender, EventArgs e) => ShowView(new Views.DoctorsView());
         private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(new Views.AppointmentsView());
         private void BtnAdmissions_Click(object sender, EventArgs e) => ShowView(new Views.AdmissionsView());
 
@@ -68,22 +108,6 @@ namespace HospitalSystem.Forms
             lblBrand.Height = 60;
             lblBrand.TextAlign = ContentAlignment.MiddleLeft;
             panelSidebar.Controls.Add(lblBrand);
-
-            btnDashboard = CreateNavButton("Dashboard", 70);
-            btnDashboard.Click += BtnDashboard_Click;
-            panelSidebar.Controls.Add(btnDashboard);
-
-            btnPatients = CreateNavButton("Patients", 120);
-            btnPatients.Click += BtnPatients_Click;
-            panelSidebar.Controls.Add(btnPatients);
-
-            btnAppointments = CreateNavButton("Appointments", 170);
-            btnAppointments.Click += BtnAppointments_Click;
-            panelSidebar.Controls.Add(btnAppointments);
-
-            btnAdmissions = CreateNavButton("Admissions", 220);
-            btnAdmissions.Click += BtnAdmissions_Click;
-            panelSidebar.Controls.Add(btnAdmissions);
 
             btnSignOut = new Button();
             btnSignOut.Text = "  Sign Out";
@@ -179,13 +203,14 @@ namespace HospitalSystem.Forms
                 BorderStyle = BorderStyle.None,
                 Font = new Font("Segoe UI", 9F)
             };
-            lvDoctors.Columns.Add("Doctor", 150);
-            lvDoctors.Columns.Add("Specialization", 130);
-            lvDoctors.Columns.Add("Department", 110);
+            lvDoctors.Columns.Add("Doctor", 140);
+            lvDoctors.Columns.Add("Specialization", 120);
+            lvDoctors.Columns.Add("Department", 100);
+            lvDoctors.Columns.Add("Status", 80);
 
             var onDuty = HospitalData.DoctorsOnDuty();
             if (onDuty.Count == 0)
-                lvDoctors.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—" }));
+                lvDoctors.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—", "—" }));
             else
             {
                 foreach (var d in onDuty)
@@ -193,6 +218,7 @@ namespace HospitalSystem.Forms
                     var item = new ListViewItem("Dr. " + d.FullName);
                     item.SubItems.Add(d.Specialization);
                     item.SubItems.Add(HospitalData.DepartmentName(d.DepartmentId));
+                    item.SubItems.Add("On Duty");
                     lvDoctors.Items.Add(item);
                 }
             }
@@ -262,24 +288,28 @@ namespace HospitalSystem.Forms
                 BorderStyle = BorderStyle.None,
                 Font = new Font("Segoe UI", 9F)
             };
-            lvUpcoming.Columns.Add("Date", 140);
-            lvUpcoming.Columns.Add("Patient", 160);
-            lvUpcoming.Columns.Add("Doctor", 130);
+            lvUpcoming.Columns.Add("Date", 90);
+            lvUpcoming.Columns.Add("Time", 70);
+            lvUpcoming.Columns.Add("Patient", 130);
+            lvUpcoming.Columns.Add("Doctor", 110);
+            lvUpcoming.Columns.Add("Status", 80);
 
             var upcoming = HospitalData.Appointments
-                .Where(a => a.ScheduledOn >= DateTime.Now && a.ScheduledOn <= DateTime.Now.AddDays(7))
+                .Where(a => a.ScheduledOn >= DateTime.Now && a.ScheduledOn <= DateTime.Now.AddDays(7) && a.Status != "Cancelled")
                 .OrderBy(a => a.ScheduledOn)
                 .ToList();
 
             if (upcoming.Count == 0)
-                lvUpcoming.Items.Add(new ListViewItem(new[] { "—", "No upcoming appointments", "—" }));
+                lvUpcoming.Items.Add(new ListViewItem(new[] { "—", "—", "No upcoming appointments", "—", "—" }));
             else
             {
                 foreach (var a in upcoming)
                 {
-                    var item = new ListViewItem(a.ScheduledOn.ToString("MMM dd, yyyy hh:mm tt"));
+                    var item = new ListViewItem(a.ScheduledOn.ToString("MMM dd, yyyy"));
+                    item.SubItems.Add(a.ScheduledOn.ToString("hh:mm tt"));
                     item.SubItems.Add(HospitalData.PatientName(a.PatientId));
                     item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
+                    item.SubItems.Add(a.Status);
                     lvUpcoming.Items.Add(item);
                 }
             }

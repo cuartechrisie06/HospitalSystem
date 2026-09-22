@@ -19,8 +19,14 @@ namespace HospitalSystem.Views
         public AppointmentsView()
         {
             InitializeComponent();
-            LoadAppointments();
-            LoadCombos();
+
+            // The Designer instantiates this class to render it at design time;
+            // data loading must never run then, or it tries to open a DB connection.
+            if (!DesignTimeHelper.IsDesignMode)
+            {
+                LoadAppointments();
+                LoadCombos();
+            }
         }
 
         private void InitializeComponent()
@@ -46,7 +52,10 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(title);
 
             // Patient
-            Label lblP = new Label { Text = "Patient", Location = new Point(15, 45), AutoSize = true };
+            Label lblP = new Label();
+            lblP.Text = "Patient";
+            lblP.Location = new Point(15, 45);
+            lblP.AutoSize = true;
             formPanel.Controls.Add(lblP);
             cmbPatient = new ComboBox();
             cmbPatient.Location = new Point(15, 65);
@@ -55,7 +64,10 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(cmbPatient);
 
             // Department
-            Label lblD = new Label { Text = "Department", Location = new Point(280, 45), AutoSize = true };
+            Label lblD = new Label();
+            lblD.Text = "Department";
+            lblD.Location = new Point(280, 45);
+            lblD.AutoSize = true;
             formPanel.Controls.Add(lblD);
             cmbDepartment = new ComboBox();
             cmbDepartment.Location = new Point(280, 65);
@@ -65,7 +77,10 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(cmbDepartment);
 
             // Doctor
-            Label lblDoc = new Label { Text = "Doctor", Location = new Point(500, 45), AutoSize = true };
+            Label lblDoc = new Label();
+            lblDoc.Text = "Doctor";
+            lblDoc.Location = new Point(500, 45);
+            lblDoc.AutoSize = true;
             formPanel.Controls.Add(lblDoc);
             cmbDoctor = new ComboBox();
             cmbDoctor.Location = new Point(500, 65);
@@ -74,7 +89,10 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(cmbDoctor);
 
             // Date
-            Label lblDate = new Label { Text = "Date & Time", Location = new Point(15, 105), AutoSize = true };
+            Label lblDate = new Label();
+            lblDate.Text = "Date & Time";
+            lblDate.Location = new Point(15, 105);
+            lblDate.AutoSize = true;
             formPanel.Controls.Add(lblDate);
             dtpDate = new DateTimePicker();
             dtpDate.Location = new Point(15, 125);
@@ -85,7 +103,10 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(dtpDate);
 
             // Reason
-            Label lblR = new Label { Text = "Reason", Location = new Point(280, 105), AutoSize = true };
+            Label lblR = new Label();
+            lblR.Text = "Reason";
+            lblR.Location = new Point(280, 105);
+            lblR.AutoSize = true;
             formPanel.Controls.Add(lblR);
             txtReason = new TextBox();
             txtReason.Location = new Point(280, 125);
@@ -139,17 +160,11 @@ namespace HospitalSystem.Views
             grid.RowHeadersVisible = false;
             grid.BackgroundColor = Color.White;
             this.Controls.Add(grid);
-
-            // Order controls correctly
-            this.Controls.SetChildIndex(grid, 0);
-            this.Controls.SetChildIndex(btnPanel, 0);
-            this.Controls.SetChildIndex(lblList, 0);
-            this.Controls.SetChildIndex(formPanel, 0);
         }
 
         private void LoadCombos()
         {
-            cmbPatient.DataSource = HospitalData.Patients.ToList();
+            cmbPatient.DataSource = HospitalData.ActivePatients();
             cmbPatient.DisplayMember = "ToString";
             cmbPatient.ValueMember = "Id";
 
@@ -163,7 +178,7 @@ namespace HospitalSystem.Views
         {
             if (cmbDepartment.SelectedValue == null) return;
             int deptId = Convert.ToInt32(cmbDepartment.SelectedValue);
-            cmbDoctor.DataSource = HospitalData.Doctors.Where(d => d.DepartmentId == deptId).ToList();
+            cmbDoctor.DataSource = HospitalData.ActiveDoctors().Where(d => d.DepartmentId == deptId).ToList();
             cmbDoctor.DisplayMember = "ToString";
             cmbDoctor.ValueMember = "Id";
         }
@@ -242,7 +257,7 @@ namespace HospitalSystem.Views
                 MessageBox.Show("Only Pending appointments can be confirmed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
-            appt.Status = "Confirmed";
+            HospitalData.UpdateAppointmentStatus(appt, "Confirmed");
             MessageBox.Show("Appointment confirmed.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadAppointments();
         }
@@ -253,7 +268,7 @@ namespace HospitalSystem.Views
             if (appt == null) return;
             if (MessageBox.Show("Cancel this appointment?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                appt.Status = "Cancelled";
+                HospitalData.UpdateAppointmentStatus(appt, "Cancelled");
                 LoadAppointments();
             }
         }
