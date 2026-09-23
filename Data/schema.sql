@@ -80,7 +80,17 @@ CREATE TABLE IF NOT EXISTS alerts (
     title       VARCHAR(150),
     message     VARCHAR(500),
     severity    VARCHAR(20),
+    status      VARCHAR(20) NOT NULL DEFAULT 'Active',
     created_on  DATETIME NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS activity_log (
+    id          INT PRIMARY KEY AUTO_INCREMENT,
+    module      VARCHAR(50) NOT NULL,
+    action      VARCHAR(50) NOT NULL,
+    description VARCHAR(255) NOT NULL,
+    icon        VARCHAR(10) NOT NULL DEFAULT '',
+    created_at  DATETIME NOT NULL
 );
 
 -- Seed data (mirrors the previous in-memory HospitalData.Seed()) --

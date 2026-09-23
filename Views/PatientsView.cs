@@ -31,6 +31,7 @@ namespace HospitalSystem.Views
             BuildGridColumns();
             SetupSearchPlaceholder();
             WireEvents();
+            grid.BringToFront();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -178,8 +179,9 @@ namespace HospitalSystem.Views
             // PatientsView
             // 
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
-            this.Controls.Add(this.header);
             this.Controls.Add(this.grid);
+            this.Controls.Add(this.header);
+            this.grid.BringToFront();
             this.Name = "PatientsView";
             this.Padding = new System.Windows.Forms.Padding(15);
             this.Size = new System.Drawing.Size(827, 391);

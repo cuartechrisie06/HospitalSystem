@@ -160,6 +160,7 @@ namespace HospitalSystem.Views
             grid.RowHeadersVisible = false;
             grid.BackgroundColor = Color.White;
             this.Controls.Add(grid);
+            grid.BringToFront();
         }
 
         private void LoadCombos()

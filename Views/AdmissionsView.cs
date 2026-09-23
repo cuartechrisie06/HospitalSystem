@@ -252,6 +252,7 @@ namespace HospitalSystem.Views
             this.Controls.Add(this.gridAdmissions);
             this.Controls.Add(this.lblBeds);
             this.Controls.Add(this.gridBeds);
+            this.gridBeds.BringToFront();
             this.Name = "AdmissionsView";
             this.Padding = new System.Windows.Forms.Padding(10);
             this.Size = new System.Drawing.Size(827, 391);

@@ -16,6 +16,8 @@ namespace HospitalSystem.Data
         public static List<Admission> Admissions { get; private set; } = new List<Admission>();
         public static List<Bed> Beds { get; private set; } = new List<Bed>();
         public static List<Alert> Alerts { get; private set; } = new List<Alert>();
+        public static List<ActivityItem> Activities { get; private set; } = new List<ActivityItem>();
+        public static HashSet<int> DismissedAutoAlertIds { get; } = new HashSet<int>();
 
         public static User CurrentUser { get; set; }
 
@@ -37,6 +39,7 @@ namespace HospitalSystem.Data
                 Appointments = LoadAppointments(conn);
                 Admissions = LoadAdmissions(conn);
                 Alerts = LoadAlerts(conn);
+                Activities = LoadActivities(conn);
             }
         }
 
@@ -192,22 +195,170 @@ namespace HospitalSystem.Data
         private static List<Alert> LoadAlerts(MySqlConnection conn)
         {
             var list = new List<Alert>();
-            using (var cmd = new MySqlCommand("SELECT id, title, message, severity, created_on FROM alerts", conn))
-            using (var r = cmd.ExecuteReader())
+            try
             {
-                while (r.Read())
+                using (var cmd = new MySqlCommand("SELECT id, title, message, severity, status, created_on FROM alerts WHERE status = 'Active'", conn))
+                using (var r = cmd.ExecuteReader())
                 {
-                    list.Add(new Alert
+                    while (r.Read())
                     {
-                        Id = r.GetInt32("id"),
-                        Title = r.GetString("title"),
-                        Message = r.GetString("message"),
-                        Severity = r.GetString("severity"),
-                        CreatedOn = r.GetDateTime("created_on")
-                    });
+                        list.Add(new Alert
+                        {
+                            Id = r.GetInt32("id"),
+                            Title = r.GetString("title"),
+                            Message = r.GetString("message"),
+                            Severity = r.GetString("severity"),
+                            Status = r.IsDBNull(r.GetOrdinal("status")) ? "Active" : r.GetString("status"),
+                            CreatedOn = r.GetDateTime("created_on"),
+                            IsAuto = false
+                        });
+                    }
+                }
+            }
+            catch
+            {
+                // Fallback for schema versions without status column
+                using (var cmd = new MySqlCommand("SELECT id, title, message, severity, created_on FROM alerts", conn))
+                using (var r = cmd.ExecuteReader())
+                {
+                    while (r.Read())
+                    {
+                        list.Add(new Alert
+                        {
+                            Id = r.GetInt32("id"),
+                            Title = r.GetString("title"),
+                            Message = r.GetString("message"),
+                            Severity = r.GetString("severity"),
+                            Status = "Active",
+                            CreatedOn = r.GetDateTime("created_on"),
+                            IsAuto = false
+                        });
+                    }
                 }
             }
             return list;
+        }
+
+        private static List<ActivityItem> LoadActivities(MySqlConnection conn)
+        {
+            var list = new List<ActivityItem>();
+            try
+            {
+                using (var cmd = new MySqlCommand("SELECT id, module, action, description, icon, created_at FROM activity_log ORDER BY created_at DESC LIMIT 50", conn))
+                using (var r = cmd.ExecuteReader())
+                {
+                    while (r.Read())
+                    {
+                        list.Add(new ActivityItem
+                        {
+                            Id = r.GetInt32("id"),
+                            Module = r.GetString("module"),
+                            Action = r.GetString("action"),
+                            Description = r.GetString("description"),
+                            Icon = r.IsDBNull(r.GetOrdinal("icon")) ? "" : r.GetString("icon"),
+                            Timestamp = r.GetDateTime("created_at")
+                        });
+                    }
+                }
+            }
+            catch
+            {
+                // activity_log table might not exist yet
+            }
+
+            if (list.Count == 0)
+            {
+                SeedInitialActivities(conn, list);
+            }
+
+            return list;
+        }
+
+        private static void SeedInitialActivities(MySqlConnection conn, List<ActivityItem> list)
+        {
+            var initial = new List<ActivityItem>();
+
+            foreach (var p in Patients)
+            {
+                initial.Add(new ActivityItem
+                {
+                    Module = "Patients",
+                    Action = "Registered",
+                    Description = $"New patient registered: {p.FullName} ({p.PatientNo})",
+                    Icon = "👤",
+                    Timestamp = p.RegisteredOn
+                });
+            }
+
+            foreach (var d in Doctors.Where(doc => doc.IsActive))
+            {
+                initial.Add(new ActivityItem
+                {
+                    Module = "Doctors",
+                    Action = "Duty",
+                    Description = d.IsOnDuty
+                        ? $"Dr. {d.FullName} clocked On Duty ({DepartmentName(d.DepartmentId)})"
+                        : $"Dr. {d.FullName} added to staff ({DepartmentName(d.DepartmentId)})",
+                    Icon = "🩺",
+                    Timestamp = DateTime.Now.AddHours(-2)
+                });
+            }
+
+            foreach (var a in Appointments)
+            {
+                initial.Add(new ActivityItem
+                {
+                    Module = "Appointments",
+                    Action = "Scheduled",
+                    Description = $"Appointment scheduled: {PatientName(a.PatientId)} with {DoctorName(a.DoctorId)}",
+                    Icon = "📅",
+                    Timestamp = a.ScheduledOn.AddDays(-1)
+                });
+            }
+
+            foreach (var adm in Admissions)
+            {
+                initial.Add(new ActivityItem
+                {
+                    Module = "Admissions",
+                    Action = "Admitted",
+                    Description = $"Admitted: {PatientName(adm.PatientId)} to {BedLabel(adm.BedId)}",
+                    Icon = "🏥",
+                    Timestamp = adm.AdmittedOn
+                });
+                if (adm.DischargedOn.HasValue)
+                {
+                    initial.Add(new ActivityItem
+                    {
+                        Module = "Admissions",
+                        Action = "Discharged",
+                        Description = $"Discharged: {PatientName(adm.PatientId)} from {BedLabel(adm.BedId)}",
+                        Icon = "🚪",
+                        Timestamp = adm.DischargedOn.Value
+                    });
+                }
+            }
+
+            var sorted = initial.OrderByDescending(x => x.Timestamp).Take(25).ToList();
+            foreach (var item in sorted)
+            {
+                try
+                {
+                    using (var cmd = new MySqlCommand(
+                        "INSERT INTO activity_log (module, action, description, icon, created_at) " +
+                        "VALUES (@module, @action, @description, @icon, @createdAt); SELECT LAST_INSERT_ID();", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@module", item.Module);
+                        cmd.Parameters.AddWithValue("@action", item.Action);
+                        cmd.Parameters.AddWithValue("@description", item.Description);
+                        cmd.Parameters.AddWithValue("@icon", item.Icon ?? "");
+                        cmd.Parameters.AddWithValue("@createdAt", item.Timestamp);
+                        item.Id = Convert.ToInt32(cmd.ExecuteScalar());
+                    }
+                }
+                catch { }
+                list.Add(item);
+            }
         }
 
         // -------------------- Authentication --------------------
@@ -243,6 +394,7 @@ namespace HospitalSystem.Data
             }
 
             Patients.Add(p);
+            LogActivity("Patients", "Registered", $"New patient registered: {p.FullName} ({p.PatientNo})", "👤");
             return p;
         }
 
@@ -262,6 +414,8 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", p.Id);
                 cmd.ExecuteNonQuery();
             }
+
+            LogActivity("Patients", "Updated", $"Updated patient record: {p.FullName} ({p.PatientNo})", "👤");
         }
 
         // Soft-delete only: patients are referenced by appointments/admissions (FK),
@@ -276,6 +430,8 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", p.Id);
                 cmd.ExecuteNonQuery();
             }
+
+            LogActivity("Patients", "Deactivated", $"Deactivated patient: {p.FullName} ({p.PatientNo})", "👤");
         }
 
         public static Patient GetPatient(int id) => Patients.FirstOrDefault(x => x.Id == id);
@@ -319,6 +475,7 @@ namespace HospitalSystem.Data
             }
 
             Appointments.Add(a);
+            LogActivity("Appointments", "Scheduled", $"Appointment scheduled: {PatientName(a.PatientId)} with {DoctorName(a.DoctorId)}", "📅");
             return a;
         }
 
@@ -332,6 +489,9 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", a.Id);
                 cmd.ExecuteNonQuery();
             }
+
+            string icon = status == "Confirmed" ? "✅" : status == "Cancelled" ? "❌" : "📅";
+            LogActivity("Appointments", status, $"{status} appointment for {PatientName(a.PatientId)}", icon);
         }
 
         public static List<Appointment> AppointmentsToday()
@@ -377,6 +537,7 @@ namespace HospitalSystem.Data
             if (bed != null)
                 bed.IsOccupied = true;
 
+            LogActivity("Admissions", "Admitted", $"Admitted: {PatientName(a.PatientId)} to {BedLabel(a.BedId)}", "🏥");
             return a;
         }
 
@@ -407,6 +568,8 @@ namespace HospitalSystem.Data
             var bed = GetBed(a.BedId);
             if (bed != null)
                 bed.IsOccupied = false;
+
+            LogActivity("Admissions", "Discharged", $"Discharged patient: {PatientName(a.PatientId)} from {BedLabel(a.BedId)}", "🚪");
         }
 
         public static List<Admission> ActiveAdmissions() => Admissions.Where(a => a.Status == "Active").ToList();
@@ -452,6 +615,7 @@ namespace HospitalSystem.Data
             }
 
             Doctors.Add(d);
+            LogActivity("Doctors", "Added", $"New doctor added: Dr. {d.FullName} ({DepartmentName(d.DepartmentId)})", "🩺");
             return d;
         }
 
@@ -470,6 +634,8 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", d.Id);
                 cmd.ExecuteNonQuery();
             }
+
+            LogActivity("Doctors", "Updated", $"Dr. {d.FullName} updated ({(d.IsOnDuty ? "On Duty" : "Off Duty")})", "🩺");
         }
 
         // Soft-delete only: doctors are referenced by appointments/admissions (FK),
@@ -484,6 +650,8 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", d.Id);
                 cmd.ExecuteNonQuery();
             }
+
+            LogActivity("Doctors", "Deactivated", $"Deactivated doctor: Dr. {d.FullName}", "🩺");
         }
 
         public static int AppointmentCountForDoctor(int doctorId) =>
@@ -510,6 +678,162 @@ namespace HospitalSystem.Data
 
         public static List<Doctor> DoctorsOnDuty() => Doctors.Where(d => d.IsOnDuty && d.IsActive).ToList();
 
-        public static List<Alert> ActiveAlerts() => Alerts.OrderByDescending(a => a.CreatedOn).ToList();
+        // -------------------- Activities & Alerts Helpers --------------------
+        public static void LogActivity(string module, string action, string description, string icon)
+        {
+            var item = new ActivityItem
+            {
+                Module = module,
+                Action = action,
+                Description = description,
+                Icon = icon,
+                Timestamp = DateTime.Now
+            };
+
+            try
+            {
+                using (var conn = Db.OpenConnection())
+                using (var cmd = new MySqlCommand(
+                    "INSERT INTO activity_log (module, action, description, icon, created_at) " +
+                    "VALUES (@module, @action, @description, @icon, @createdAt); SELECT LAST_INSERT_ID();", conn))
+                {
+                    cmd.Parameters.AddWithValue("@module", item.Module);
+                    cmd.Parameters.AddWithValue("@action", item.Action);
+                    cmd.Parameters.AddWithValue("@description", item.Description);
+                    cmd.Parameters.AddWithValue("@icon", (object)item.Icon ?? "");
+                    cmd.Parameters.AddWithValue("@createdAt", item.Timestamp);
+                    item.Id = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
+            catch { }
+
+            Activities.Insert(0, item);
+            if (Activities.Count > 100)
+                Activities.RemoveAt(Activities.Count - 1);
+        }
+
+        public static Alert AddAlert(Alert a)
+        {
+            if (a.CreatedOn == default)
+                a.CreatedOn = DateTime.Now;
+            a.Status = "Active";
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "INSERT INTO alerts (title, message, severity, status, created_on) " +
+                "VALUES (@title, @message, @severity, @status, @createdOn); SELECT LAST_INSERT_ID();", conn))
+            {
+                cmd.Parameters.AddWithValue("@title", a.Title);
+                cmd.Parameters.AddWithValue("@message", a.Message);
+                cmd.Parameters.AddWithValue("@severity", a.Severity);
+                cmd.Parameters.AddWithValue("@status", a.Status);
+                cmd.Parameters.AddWithValue("@createdOn", a.CreatedOn);
+                a.Id = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+
+            Alerts.Add(a);
+            LogActivity("Alerts", "Created", $"Emergency alert posted: {a.Title}", "⚠️");
+            return a;
+        }
+
+        public static void ResolveAlert(int alertId)
+        {
+            if (alertId < 0)
+            {
+                DismissedAutoAlertIds.Add(alertId);
+                LogActivity("Alerts", "Resolved", "Auto alert acknowledged/dismissed", "✅");
+                return;
+            }
+
+            var a = Alerts.FirstOrDefault(x => x.Id == alertId);
+            if (a != null)
+            {
+                a.Status = "Resolved";
+                Alerts.Remove(a);
+                try
+                {
+                    using (var conn = Db.OpenConnection())
+                    using (var cmd = new MySqlCommand("UPDATE alerts SET status='Resolved' WHERE id=@id", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@id", alertId);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                catch { }
+
+                LogActivity("Alerts", "Resolved", $"Resolved alert: {a.Title}", "✅");
+            }
+        }
+
+        public static List<Alert> ActiveAlerts()
+        {
+            var result = new List<Alert>();
+
+            // 1. Dynamic auto-detected condition: ICU Bed Capacity
+            var icuBeds = Beds.Where(b => b.Ward == "ICU").ToList();
+            if (icuBeds.Count > 0)
+            {
+                int availableIcu = icuBeds.Count(b => !b.IsOccupied);
+                int autoIcuId = -100;
+                if (availableIcu <= 1 && !DismissedAutoAlertIds.Contains(autoIcuId))
+                {
+                    result.Add(new Alert
+                    {
+                        Id = autoIcuId,
+                        Title = availableIcu == 0 ? "ICU Bed Full" : "ICU Bed Critical",
+                        Message = availableIcu == 0 ? "All ICU beds are currently occupied" : $"Only {availableIcu} of {icuBeds.Count} ICU beds remaining",
+                        Severity = "High",
+                        CreatedOn = DateTime.Now,
+                        IsAuto = true
+                    });
+                }
+            }
+
+            // 2. Dynamic auto-detected condition: Staff Shortage per department
+            foreach (var dept in Departments)
+            {
+                int deptId = dept.Id;
+                int autoDeptId = -200 - deptId;
+                var deptDoctors = Doctors.Where(d => d.DepartmentId == deptId && d.IsActive).ToList();
+                if (deptDoctors.Count > 0 && !deptDoctors.Any(d => d.IsOnDuty) && !DismissedAutoAlertIds.Contains(autoDeptId))
+                {
+                    result.Add(new Alert
+                    {
+                        Id = autoDeptId,
+                        Title = "Staff Shortage",
+                        Message = $"{dept.Name} has no doctor currently on duty",
+                        Severity = "Medium",
+                        CreatedOn = DateTime.Now,
+                        IsAuto = true
+                    });
+                }
+            }
+
+            // 3. Dynamic auto-detected condition: High Overall Bed Occupancy (>80%)
+            int totalBeds = Beds.Count;
+            int occupiedBeds = Beds.Count(b => b.IsOccupied);
+            int autoOccupancyId = -300;
+            if (totalBeds > 0 && ((double)occupiedBeds / totalBeds) >= 0.8 && !DismissedAutoAlertIds.Contains(autoOccupancyId))
+            {
+                result.Add(new Alert
+                {
+                    Id = autoOccupancyId,
+                    Title = "High Bed Occupancy",
+                    Message = $"{occupiedBeds} of {totalBeds} beds occupied ({Math.Round((double)occupiedBeds / totalBeds * 100)}%)",
+                    Severity = "Medium",
+                    CreatedOn = DateTime.Now,
+                    IsAuto = true
+                });
+            }
+
+            // 4. Active manual alerts
+            result.AddRange(Alerts.Where(a => a.Status == "Active"));
+
+            // Sort by Severity (High first, then Medium, then Low), then by CreatedOn
+            return result
+                .OrderBy(a => a.Severity == "High" ? 0 : a.Severity == "Medium" ? 1 : 2)
+                .ThenByDescending(a => a.CreatedOn)
+                .ToList();
+        }
     }
 }

@@ -227,14 +227,38 @@ namespace HospitalSystem.Forms
 
             // Emergency Alerts
             var pnlAlerts = CreateCardPanel();
+            var pnlAlertHeader = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 28
+            };
+
             var lblAlerts = new Label
             {
                 Text = "Emergency Alerts",
                 Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Dock = DockStyle.Top,
-                Height = 26,
-                ForeColor = Color.FromArgb(185, 28, 28)
+                ForeColor = Color.FromArgb(185, 28, 28),
+                AutoSize = true,
+                Location = new Point(0, 4)
             };
+
+            var btnNewAlert = new Button
+            {
+                Text = "+ New Alert",
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                BackColor = Color.FromArgb(185, 28, 28),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Size = new Size(88, 24),
+                Location = new Point(pnlAlerts.Width - 98, 2),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                Cursor = Cursors.Hand
+            };
+            btnNewAlert.FlatAppearance.BorderSize = 0;
+            btnNewAlert.Click += (s, e) => ShowNewAlertDialog();
+
+            pnlAlertHeader.Controls.Add(lblAlerts);
+            pnlAlertHeader.Controls.Add(btnNewAlert);
 
             var flAlerts = new FlowLayoutPanel
             {
@@ -247,13 +271,33 @@ namespace HospitalSystem.Forms
 
             var alerts = HospitalData.ActiveAlerts();
             if (alerts.Count == 0)
-                flAlerts.Controls.Add(new Label { Text = "No active alerts", ForeColor = Color.Gray, AutoSize = true });
+            {
+                var pnlNormal = new Panel
+                {
+                    Width = 420,
+                    Height = 44,
+                    BackColor = Color.FromArgb(240, 253, 244),
+                    Padding = new Padding(8)
+                };
+                var lblNormal = new Label
+                {
+                    Text = "✔  All systems normal — No active emergency alerts",
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(22, 101, 52),
+                    AutoSize = true,
+                    Location = new Point(10, 12)
+                };
+                pnlNormal.Controls.Add(lblNormal);
+                flAlerts.Controls.Add(pnlNormal);
+            }
             else
+            {
                 foreach (var a in alerts)
                     flAlerts.Controls.Add(CreateAlertItem(a));
+            }
 
             pnlAlerts.Controls.Add(flAlerts);
-            pnlAlerts.Controls.Add(lblAlerts);
+            pnlAlerts.Controls.Add(pnlAlertHeader);
 
             tlRow2.Controls.Add(pnlDoctors, 0, 0);
             tlRow2.Controls.Add(pnlAlerts, 1, 0);
@@ -335,28 +379,18 @@ namespace HospitalSystem.Forms
                 IntegralHeight = false
             };
 
-            var recent = new System.Collections.Generic.List<string>();
-
-            recent.AddRange(HospitalData.Appointments
-                .Where(a => a.ScheduledOn >= DateTime.Now.AddDays(-7))
-                .OrderByDescending(a => a.ScheduledOn)
-                .Select(a => $"📅  {a.ScheduledOn:MMM dd} – {HospitalData.PatientName(a.PatientId)}"));
-
-            recent.AddRange(HospitalData.Admissions
-                .Where(ad => ad.AdmittedOn >= DateTime.Now.AddDays(-7))
-                .OrderByDescending(ad => ad.AdmittedOn)
-                .Select(ad => $"🏥  Admission: {HospitalData.PatientName(ad.PatientId)}"));
-
-            recent.AddRange(HospitalData.Patients
-                .Where(p => p.RegisteredOn >= DateTime.Now.AddDays(-7))
-                .OrderByDescending(p => p.RegisteredOn)
-                .Select(p => $"👤  New patient: {p.FullName}"));
-
-            if (recent.Count == 0)
-                lbActivity.Items.Add("No recent activity");
+            if (HospitalData.Activities.Count == 0)
+            {
+                lbActivity.Items.Add("No recent activity recorded");
+            }
             else
-                foreach (var s in recent.Take(10))
-                    lbActivity.Items.Add(s);
+            {
+                foreach (var act in HospitalData.Activities.Take(15))
+                {
+                    string timeStr = GetRelativeTime(act.Timestamp);
+                    lbActivity.Items.Add($"{act.Icon}  {act.Description}  ({timeStr})");
+                }
+            }
 
             pnlActivity.Controls.Add(lbActivity);
             pnlActivity.Controls.Add(lblActivity);
@@ -407,11 +441,12 @@ namespace HospitalSystem.Forms
 
             var p = new Panel
             {
-                Width = 420,
-                Height = 48,
+                Width = 430,
+                Height = 52,
                 Margin = new Padding(0, 0, 0, 5),
                 BackColor = bg,
-                Padding = new Padding(8)
+                Padding = new Padding(8),
+                Cursor = Cursors.Hand
             };
 
             p.Paint += (s, e) =>
@@ -420,27 +455,258 @@ namespace HospitalSystem.Forms
                     e.Graphics.DrawLine(pen, 0, 0, 0, p.Height);
             };
 
+            string titlePrefix = a.IsAuto ? "⚡ [AUTO] " : "⚠️ ";
             var lblTitle = new Label
             {
-                Text = a.Title,
+                Text = titlePrefix + a.Title,
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(30, 30, 30),
                 AutoSize = true,
-                Location = new Point(10, 3)
+                Location = new Point(10, 4),
+                Cursor = Cursors.Hand
             };
 
             var lblMsg = new Label
             {
                 Text = a.Message,
                 Font = new Font("Segoe UI", 8F),
-                ForeColor = Color.FromArgb(80, 80, 80),
+                ForeColor = Color.FromArgb(70, 70, 70),
                 AutoSize = true,
-                Location = new Point(10, 22)
+                Location = new Point(10, 25),
+                Cursor = Cursors.Hand
             };
+
+            var btnResolve = new Button
+            {
+                Text = "Resolve",
+                Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
+                Size = new Size(64, 22),
+                Location = new Point(p.Width - 74, 14),
+                Anchor = AnchorStyles.Top | AnchorStyles.Right,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.White,
+                ForeColor = border,
+                Cursor = Cursors.Hand
+            };
+            btnResolve.FlatAppearance.BorderColor = border;
+            btnResolve.FlatAppearance.BorderSize = 1;
+            btnResolve.Click += (s, e) =>
+            {
+                HospitalData.ResolveAlert(a.Id);
+                ShowOverview();
+            };
+
+            Action openDetails = () => ShowAlertDetailsDialog(a);
+            p.Click += (s, e) => openDetails();
+            lblTitle.Click += (s, e) => openDetails();
+            lblMsg.Click += (s, e) => openDetails();
 
             p.Controls.Add(lblTitle);
             p.Controls.Add(lblMsg);
+            p.Controls.Add(btnResolve);
             return p;
+        }
+
+        private void ShowAlertDetailsDialog(Alert a)
+        {
+            using (var dlg = new Form())
+            {
+                dlg.Text = "Emergency Alert Details";
+                dlg.Size = new Size(420, 290);
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+                dlg.BackColor = Color.White;
+
+                Color headerColor = a.Severity == "High" ? Color.FromArgb(185, 28, 28) :
+                                   a.Severity == "Medium" ? Color.FromArgb(217, 119, 6) :
+                                   Color.FromArgb(37, 99, 235);
+
+                var pnlHeader = new Panel
+                {
+                    Dock = DockStyle.Top,
+                    Height = 50,
+                    BackColor = headerColor
+                };
+
+                var lblDlgTitle = new Label
+                {
+                    Text = $"{(a.IsAuto ? "[AUTO] " : "")}{a.Title}",
+                    Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    Location = new Point(15, 12),
+                    AutoSize = true
+                };
+                pnlHeader.Controls.Add(lblDlgTitle);
+
+                var lblSev = new Label
+                {
+                    Text = $"Severity: {a.Severity}   •   Time: {a.CreatedOn:MMM dd, yyyy hh:mm tt}",
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    ForeColor = headerColor,
+                    Location = new Point(18, 65),
+                    AutoSize = true
+                };
+
+                var lblDesc = new Label
+                {
+                    Text = a.Message,
+                    Font = new Font("Segoe UI", 9.5F),
+                    ForeColor = Color.FromArgb(55, 65, 81),
+                    Location = new Point(18, 95),
+                    Size = new Size(365, 75)
+                };
+
+                var btnDismiss = new Button
+                {
+                    Text = "Resolve / Dismiss Alert",
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    BackColor = headerColor,
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(160, 34),
+                    Location = new Point(18, 185),
+                    Cursor = Cursors.Hand
+                };
+                btnDismiss.FlatAppearance.BorderSize = 0;
+                btnDismiss.Click += (s, e) =>
+                {
+                    HospitalData.ResolveAlert(a.Id);
+                    dlg.DialogResult = DialogResult.OK;
+                    dlg.Close();
+                    ShowOverview();
+                };
+
+                var btnClose = new Button
+                {
+                    Text = "Close",
+                    Font = new Font("Segoe UI", 9F),
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(80, 34),
+                    Location = new Point(190, 185),
+                    Cursor = Cursors.Hand
+                };
+                btnClose.Click += (s, e) => dlg.Close();
+
+                dlg.Controls.Add(pnlHeader);
+                dlg.Controls.Add(lblSev);
+                dlg.Controls.Add(lblDesc);
+                dlg.Controls.Add(btnDismiss);
+                dlg.Controls.Add(btnClose);
+
+                dlg.ShowDialog(this);
+            }
+        }
+
+        private void ShowNewAlertDialog()
+        {
+            using (var dlg = new Form())
+            {
+                dlg.Text = "Broadcast Emergency Alert";
+                dlg.Size = new Size(460, 360);
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.MaximizeBox = false;
+                dlg.MinimizeBox = false;
+                dlg.BackColor = Color.White;
+
+                var pnlHeader = new Panel
+                {
+                    Dock = DockStyle.Top,
+                    Height = 50,
+                    BackColor = Color.FromArgb(185, 28, 28)
+                };
+
+                var lblTitle = new Label
+                {
+                    Text = "New Emergency Alert",
+                    Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                    ForeColor = Color.White,
+                    Location = new Point(15, 12),
+                    AutoSize = true
+                };
+                pnlHeader.Controls.Add(lblTitle);
+
+                var lblT = new Label { Text = "Alert Title / Condition:", Location = new Point(20, 65), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+                var txtTitle = new TextBox { Location = new Point(20, 85), Size = new Size(400, 26), Font = new Font("Segoe UI", 9.5F) };
+
+                var lblS = new Label { Text = "Severity Level:", Location = new Point(20, 120), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+                var cmbSev = new ComboBox { Location = new Point(20, 140), Size = new Size(200, 26), DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9F) };
+                cmbSev.Items.AddRange(new object[] { "High", "Medium", "Low" });
+                cmbSev.SelectedIndex = 0;
+
+                var lblM = new Label { Text = "Message Details:", Location = new Point(20, 175), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
+                var txtMsg = new TextBox { Location = new Point(20, 195), Size = new Size(400, 55), Multiline = true, Font = new Font("Segoe UI", 9F) };
+
+                var btnPost = new Button
+                {
+                    Text = "Broadcast Alert",
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    BackColor = Color.FromArgb(185, 28, 28),
+                    ForeColor = Color.White,
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(130, 34),
+                    Location = new Point(20, 265),
+                    Cursor = Cursors.Hand
+                };
+                btnPost.FlatAppearance.BorderSize = 0;
+                btnPost.Click += (s, e) =>
+                {
+                    if (string.IsNullOrWhiteSpace(txtTitle.Text))
+                    {
+                        MessageBox.Show("Please enter an alert title.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+
+                    var alert = new Alert
+                    {
+                        Title = txtTitle.Text.Trim(),
+                        Message = string.IsNullOrWhiteSpace(txtMsg.Text) ? txtTitle.Text.Trim() : txtMsg.Text.Trim(),
+                        Severity = cmbSev.SelectedItem.ToString(),
+                        CreatedOn = DateTime.Now,
+                        IsAuto = false
+                    };
+
+                    HospitalData.AddAlert(alert);
+                    dlg.DialogResult = DialogResult.OK;
+                    dlg.Close();
+                    ShowOverview();
+                };
+
+                var btnCancel = new Button
+                {
+                    Text = "Cancel",
+                    Font = new Font("Segoe UI", 9F),
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(80, 34),
+                    Location = new Point(160, 265),
+                    Cursor = Cursors.Hand
+                };
+                btnCancel.Click += (s, e) => dlg.Close();
+
+                dlg.Controls.Add(pnlHeader);
+                dlg.Controls.Add(lblT);
+                dlg.Controls.Add(txtTitle);
+                dlg.Controls.Add(lblS);
+                dlg.Controls.Add(cmbSev);
+                dlg.Controls.Add(lblM);
+                dlg.Controls.Add(txtMsg);
+                dlg.Controls.Add(btnPost);
+                dlg.Controls.Add(btnCancel);
+
+                dlg.ShowDialog(this);
+            }
+        }
+
+        private static string GetRelativeTime(DateTime dt)
+        {
+            var span = DateTime.Now - dt;
+            if (span.TotalSeconds < 60) return "Just now";
+            if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
+            if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
+            if (span.TotalDays < 7) return $"{(int)span.TotalDays}d ago";
+            return dt.ToString("MMM dd");
         }
 
         private Panel CreateCardPanel()
