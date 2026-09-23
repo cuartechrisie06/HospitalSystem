@@ -63,6 +63,47 @@ namespace HospitalSystem.Forms
             btnAdmissions = CreateNavButton("Admissions", 270);
             btnAdmissions.Click += BtnAdmissions_Click;
             panelSidebar.Controls.Add(btnAdmissions);
+
+            AddSidebarSeparators();
+        }
+
+        // Thin divider lines in the sidebar.
+        // Purely decorative: these are 1px panels layered into the existing gaps,
+        // so no button position, click handler or data path is touched.
+        private void AddSidebarSeparators()
+        {
+            // under the "Hospital System" title (title ends at 60, first button starts at 70)
+            panelSidebar.Controls.Add(CreateSeparator(64, true));
+
+            // between the nav buttons - each is 42px tall with an 8px gap after it
+            panelSidebar.Controls.Add(CreateSeparator(116, false));
+            panelSidebar.Controls.Add(CreateSeparator(166, false));
+            panelSidebar.Controls.Add(CreateSeparator(216, false));
+            panelSidebar.Controls.Add(CreateSeparator(266, false));
+
+            // above the user / sign-out block pinned at the bottom
+            Panel bottomLine = new Panel();
+            bottomLine.Height = 1;
+            bottomLine.Dock = DockStyle.Bottom;
+            bottomLine.BackColor = Color.FromArgb(78, 115, 205);
+            panelSidebar.Controls.Add(bottomLine);
+
+            // dock last so it lands above lblUser and btnSignOut, not below them
+            bottomLine.BringToFront();
+        }
+
+        private Panel CreateSeparator(int top, bool strong)
+        {
+            Panel line = new Panel();
+            line.Height = 1;
+            line.Left = 16;
+            line.Width = panelSidebar.Width - 32;
+            line.Top = top;
+            line.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            line.BackColor = strong
+                ? Color.FromArgb(78, 115, 205)
+                : Color.FromArgb(52, 82, 165);
+            return line;
         }
 
         private void UpdateUserLabel()
