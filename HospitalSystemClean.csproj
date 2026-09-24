@@ -129,6 +129,9 @@
     </Compile>
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Forms\LoginForm.resx">
+      <DependentUpon>LoginForm.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Views\AdmissionsView.resx">
       <DependentUpon>AdmissionsView.cs</DependentUpon>
     </EmbeddedResource>
