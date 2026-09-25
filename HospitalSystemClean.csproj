@@ -106,6 +106,12 @@
     <Compile Include="Models\Appointment.cs" />
     <Compile Include="Models\Bed.cs" />
     <Compile Include="Models\Admission.cs" />
+    <Compile Include="Models\Bill.cs" />
+    <Compile Include="Models\BillItem.cs" />
+    <Compile Include="Models\Payment.cs" />
+    <Compile Include="Models\BillStatus.cs" />
+    <Compile Include="Models\BillCategory.cs" />
+    <Compile Include="Models\PaymentMethod.cs" />
     <Compile Include="Data\Db.cs" />
     <Compile Include="Data\DesignTimeHelper.cs" />
     <Compile Include="Data\HospitalData.cs" />
@@ -125,6 +131,9 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Views\AdmissionsView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Views\BillingView.cs">
       <SubType>UserControl</SubType>
     </Compile>
   </ItemGroup>

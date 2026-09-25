@@ -8,8 +8,9 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 - **Dashboard** with live statistics pulled from MySQL
 - **Patients** – Register, search, update
 - **Doctors** – Doctor list and duty status
-- **Appointments** – Schedule, confirm, cancel (with basic double-booking protection)
-- **Admissions** – Admit patient, assign bed, discharge, live bed board
+- **Appointments** – Schedule, confirm, reschedule, mark completed, cancel (with basic double-booking protection)
+- **Admissions** – Admit patient, assign bed, discharge, cancel (for mistaken entries), live bed board
+- **Billing** – Bills per patient (optionally linked to an admission or appointment), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid / Cancelled)
 - **Activity log** – Every action is recorded in the `activity_log` table
 
 ## Demo Accounts
@@ -35,7 +36,7 @@ Open the **XAMPP Control Panel** and click **Start** next to **MySQL**.
 
 ### 2. Create the database
 
-Import `Data/schema.sql`. It creates the `hospital_system` database, all 9 tables, and the seed data
+Import `Data/schema.sql`. It creates the `hospital_system` database, all 12 tables, and the seed data
 (2 users, 4 departments, 5 doctors, 12 beds, 3 patients).
 
 Using the command line:
@@ -45,6 +46,9 @@ Using the command line:
 ```
 
 Or in **phpMyAdmin** (`http://localhost/phpmyadmin`): Import → choose `Data/schema.sql` → Go.
+
+> Already imported the database before billing was added? No need to re-import:
+> the app creates the `bills`, `bill_items` and `payments` tables on startup if they are missing.
 
 ### 3. Run the app
 
@@ -70,12 +74,12 @@ Change it there if your MySQL uses a different port, user or password.
 - **Data**: MySQL, accessed through `MySql.Data` (NuGet). Data persists between runs.
 - **UI**: Standard Windows Forms controls, laid out in code.
 - **Structure**:
-  - `Models/` – Data classes (Patient, Doctor, Appointment, Admission, Bed, Alert, ActivityItem)
+  - `Models/` – Data classes (Patient, Doctor, Appointment, Admission, Bed, Bill, BillItem, Payment, Alert, ActivityItem)
   - `Data/Db.cs` – Connection factory
   - `Data/HospitalData.cs` – All SQL queries live here
   - `Data/schema.sql` – Database schema + seed data
   - `Forms/` – LoginForm + DashboardForm
-  - `Views/` – PatientsView, DoctorsView, AppointmentsView, AdmissionsView
+  - `Views/` – PatientsView, DoctorsView, AppointmentsView, AdmissionsView, BillingView
 
 ## Troubleshooting
 

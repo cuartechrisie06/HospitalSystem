@@ -93,6 +93,48 @@ CREATE TABLE IF NOT EXISTS activity_log (
     created_at  DATETIME NOT NULL
 );
 
+-- Billing. The app also creates these on startup (HospitalData.EnsureBillingTables),
+-- so an existing database does not need to be re-imported.
+CREATE TABLE IF NOT EXISTS bills (
+    id              INT PRIMARY KEY AUTO_INCREMENT,
+    patient_id      INT NOT NULL,
+    admission_id    INT NULL,
+    appointment_id  INT NULL,
+    bill_date       DATETIME NOT NULL,
+    total_amount    DECIMAL(12,2) NOT NULL DEFAULT 0,
+    amount_paid     DECIMAL(12,2) NOT NULL DEFAULT 0,
+    balance         DECIMAL(12,2) NOT NULL DEFAULT 0,
+    status          VARCHAR(20) NOT NULL DEFAULT 'Unpaid',
+    notes           VARCHAR(500),
+    created_by      VARCHAR(50),
+    created_at      DATETIME NOT NULL,
+    FOREIGN KEY (patient_id) REFERENCES patients(id),
+    FOREIGN KEY (admission_id) REFERENCES admissions(id),
+    FOREIGN KEY (appointment_id) REFERENCES appointments(id)
+);
+
+CREATE TABLE IF NOT EXISTS bill_items (
+    id           INT PRIMARY KEY AUTO_INCREMENT,
+    bill_id      INT NOT NULL,
+    description  VARCHAR(255) NOT NULL,
+    category     VARCHAR(20) NOT NULL,
+    quantity     INT NOT NULL DEFAULT 1,
+    unit_price   DECIMAL(12,2) NOT NULL,
+    amount       DECIMAL(12,2) NOT NULL,
+    FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS payments (
+    id              INT PRIMARY KEY AUTO_INCREMENT,
+    bill_id         INT NOT NULL,
+    amount          DECIMAL(12,2) NOT NULL,
+    payment_method  VARCHAR(20) NOT NULL,
+    payment_date    DATETIME NOT NULL,
+    reference_no    VARCHAR(100),
+    received_by     VARCHAR(100),
+    FOREIGN KEY (bill_id) REFERENCES bills(id)
+);
+
 -- Seed data (mirrors the previous in-memory HospitalData.Seed()) --
 
 INSERT INTO users (username, password, display_name, role) VALUES

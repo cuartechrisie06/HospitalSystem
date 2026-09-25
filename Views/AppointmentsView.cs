@@ -13,7 +13,7 @@ namespace HospitalSystem.Views
         private ComboBox cmbPatient, cmbDepartment, cmbDoctor;
         private DateTimePicker dtpDate;
         private TextBox txtReason;
-        private Button btnSchedule, btnConfirm, btnCancel;
+        private Button btnSchedule, btnConfirm, btnCancel, btnReschedule, btnComplete;
         private Label lblStatus;
 
         public AppointmentsView()
@@ -150,6 +150,20 @@ namespace HospitalSystem.Views
             btnCancel.Click += BtnCancel_Click;
             btnPanel.Controls.Add(btnCancel);
 
+            btnReschedule = new Button();
+            btnReschedule.Text = "Reschedule Selected";
+            btnReschedule.Location = new Point(300, 5);
+            btnReschedule.Size = new Size(150, 30);
+            btnReschedule.Click += BtnReschedule_Click;
+            btnPanel.Controls.Add(btnReschedule);
+
+            btnComplete = new Button();
+            btnComplete.Text = "Mark Completed";
+            btnComplete.Location = new Point(460, 5);
+            btnComplete.Size = new Size(140, 30);
+            btnComplete.Click += BtnComplete_Click;
+            btnPanel.Controls.Add(btnComplete);
+
             grid = new DataGridView();
             grid.Dock = DockStyle.Fill;
             grid.AllowUserToAddRows = false;
@@ -216,12 +230,7 @@ namespace HospitalSystem.Views
             DateTime when = dtpDate.Value;
 
             // Simple double-booking check
-            bool clash = HospitalData.Appointments.Any(a =>
-                a.DoctorId == doctorId &&
-                a.Status != "Cancelled" &&
-                Math.Abs((a.ScheduledOn - when).TotalMinutes) < 30);
-
-            if (clash)
+            if (HospitalData.HasAppointmentClash(doctorId, when))
             {
                 MessageBox.Show("This doctor already has an appointment around that time.", "Conflict", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -267,10 +276,110 @@ namespace HospitalSystem.Views
         {
             var appt = GetSelectedAppointment();
             if (appt == null) return;
+            if (!appt.IsOpen)
+            {
+                MessageBox.Show("Only Pending or Confirmed appointments can be cancelled.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
             if (MessageBox.Show("Cancel this appointment?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.UpdateAppointmentStatus(appt, "Cancelled");
+                HospitalData.CancelAppointment(appt);
                 LoadAppointments();
+            }
+        }
+
+        private void BtnReschedule_Click(object sender, EventArgs e)
+        {
+            var appt = GetSelectedAppointment();
+            if (appt == null) return;
+            if (!appt.IsOpen)
+            {
+                MessageBox.Show("Only Pending or Confirmed appointments can be rescheduled.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            DateTime? newDate = PromptForNewDate(appt);
+            if (newDate == null) return;
+
+            if (HospitalData.HasAppointmentClash(appt.DoctorId, newDate.Value, appt.Id))
+            {
+                MessageBox.Show("This doctor already has an appointment around that time.", "Conflict", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                HospitalData.RescheduleAppointment(appt, newDate.Value);
+                MessageBox.Show("Appointment moved to " + appt.ScheduledOn.ToString("yyyy-MM-dd HH:mm") + ".", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadAppointments();
+            }
+            catch (InvalidOperationException ex)
+            {
+                MessageBox.Show(ex.Message, "Cannot Reschedule", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void BtnComplete_Click(object sender, EventArgs e)
+        {
+            var appt = GetSelectedAppointment();
+            if (appt == null) return;
+            if (appt.Status != "Confirmed")
+            {
+                MessageBox.Show("Only Confirmed appointments can be marked as completed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            if (MessageBox.Show("Mark this appointment as completed?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+            {
+                HospitalData.CompleteAppointment(appt);
+                LoadAppointments();
+            }
+        }
+
+        // Small modal with a single date/time picker. Returns null if the user cancels.
+        private DateTime? PromptForNewDate(Appointment appt)
+        {
+            using (var dlg = new Form())
+            {
+                dlg.Text = "Reschedule " + appt.AppointmentNo;
+                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
+                dlg.StartPosition = FormStartPosition.CenterParent;
+                dlg.MinimizeBox = false;
+                dlg.MaximizeBox = false;
+                dlg.ClientSize = new Size(320, 130);
+
+                Label lbl = new Label();
+                lbl.Text = "New date & time (currently " + appt.ScheduledOn.ToString("yyyy-MM-dd HH:mm") + ")";
+                lbl.Location = new Point(15, 15);
+                lbl.AutoSize = true;
+                dlg.Controls.Add(lbl);
+
+                DateTimePicker dtp = new DateTimePicker();
+                dtp.Location = new Point(15, 40);
+                dtp.Size = new Size(290, 28);
+                dtp.Format = DateTimePickerFormat.Custom;
+                dtp.CustomFormat = "yyyy-MM-dd HH:mm";
+                dtp.MinDate = DateTime.Today;
+                dtp.Value = appt.ScheduledOn < DateTime.Today ? DateTime.Now : appt.ScheduledOn;
+                dlg.Controls.Add(dtp);
+
+                Button ok = new Button();
+                ok.Text = "Reschedule";
+                ok.DialogResult = DialogResult.OK;
+                ok.Location = new Point(115, 85);
+                ok.Size = new Size(90, 30);
+                dlg.Controls.Add(ok);
+
+                Button cancel = new Button();
+                cancel.Text = "Cancel";
+                cancel.DialogResult = DialogResult.Cancel;
+                cancel.Location = new Point(215, 85);
+                cancel.Size = new Size(90, 30);
+                dlg.Controls.Add(cancel);
+
+                dlg.AcceptButton = ok;
+                dlg.CancelButton = cancel;
+
+                return dlg.ShowDialog(this) == DialogResult.OK ? dtp.Value : (DateTime?)null;
             }
         }
     }

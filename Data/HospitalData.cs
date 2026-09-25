@@ -15,6 +15,7 @@ namespace HospitalSystem.Data
         public static List<Appointment> Appointments { get; private set; } = new List<Appointment>();
         public static List<Admission> Admissions { get; private set; } = new List<Admission>();
         public static List<Bed> Beds { get; private set; } = new List<Bed>();
+        public static List<Bill> Bills { get; private set; } = new List<Bill>();
         public static List<Alert> Alerts { get; private set; } = new List<Alert>();
         public static List<ActivityItem> Activities { get; private set; } = new List<ActivityItem>();
         public static HashSet<int> DismissedAutoAlertIds { get; } = new HashSet<int>();
@@ -38,6 +39,8 @@ namespace HospitalSystem.Data
                 Patients = LoadPatients(conn);
                 Appointments = LoadAppointments(conn);
                 Admissions = LoadAdmissions(conn);
+                EnsureBillingTables(conn);
+                Bills = LoadBills(conn);
                 Alerts = LoadAlerts(conn);
                 Activities = LoadActivities(conn);
             }
@@ -189,6 +192,144 @@ namespace HospitalSystem.Data
                     });
                 }
             }
+            return list;
+        }
+
+        // Keep in sync with Data/schema.sql. Creating them here means a database
+        // imported before billing existed picks the tables up without a re-import.
+        private static void EnsureBillingTables(MySqlConnection conn)
+        {
+            string[] ddl =
+            {
+                "CREATE TABLE IF NOT EXISTS bills (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  patient_id INT NOT NULL," +
+                "  admission_id INT NULL," +
+                "  appointment_id INT NULL," +
+                "  bill_date DATETIME NOT NULL," +
+                "  total_amount DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  balance DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  status VARCHAR(20) NOT NULL DEFAULT 'Unpaid'," +
+                "  notes VARCHAR(500)," +
+                "  created_by VARCHAR(50)," +
+                "  created_at DATETIME NOT NULL," +
+                "  FOREIGN KEY (patient_id) REFERENCES patients(id)," +
+                "  FOREIGN KEY (admission_id) REFERENCES admissions(id)," +
+                "  FOREIGN KEY (appointment_id) REFERENCES appointments(id))",
+
+                "CREATE TABLE IF NOT EXISTS bill_items (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  bill_id INT NOT NULL," +
+                "  description VARCHAR(255) NOT NULL," +
+                "  category VARCHAR(20) NOT NULL," +
+                "  quantity INT NOT NULL DEFAULT 1," +
+                "  unit_price DECIMAL(12,2) NOT NULL," +
+                "  amount DECIMAL(12,2) NOT NULL," +
+                "  FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE)",
+
+                "CREATE TABLE IF NOT EXISTS payments (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  bill_id INT NOT NULL," +
+                "  amount DECIMAL(12,2) NOT NULL," +
+                "  payment_method VARCHAR(20) NOT NULL," +
+                "  payment_date DATETIME NOT NULL," +
+                "  reference_no VARCHAR(100)," +
+                "  received_by VARCHAR(100)," +
+                "  FOREIGN KEY (bill_id) REFERENCES bills(id))"
+            };
+
+            foreach (var sql in ddl)
+            {
+                using (var cmd = new MySqlCommand(sql, conn))
+                    cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static List<Bill> LoadBills(MySqlConnection conn)
+        {
+            var list = new List<Bill>();
+            using (var cmd = new MySqlCommand(
+                "SELECT id, patient_id, admission_id, appointment_id, bill_date, total_amount, amount_paid, " +
+                "balance, status, notes, created_by, created_at FROM bills", conn))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    BillStatus status;
+                    Enum.TryParse(r.GetString("status"), out status);
+
+                    list.Add(new Bill
+                    {
+                        Id = r.GetInt32("id"),
+                        PatientId = r.GetInt32("patient_id"),
+                        AdmissionId = r.IsDBNull(r.GetOrdinal("admission_id")) ? (int?)null : r.GetInt32("admission_id"),
+                        AppointmentId = r.IsDBNull(r.GetOrdinal("appointment_id")) ? (int?)null : r.GetInt32("appointment_id"),
+                        BillDate = r.GetDateTime("bill_date"),
+                        TotalAmount = r.GetDecimal("total_amount"),
+                        AmountPaid = r.GetDecimal("amount_paid"),
+                        Balance = r.GetDecimal("balance"),
+                        Status = status,
+                        Notes = r.IsDBNull(r.GetOrdinal("notes")) ? null : r.GetString("notes"),
+                        CreatedBy = r.IsDBNull(r.GetOrdinal("created_by")) ? null : r.GetString("created_by"),
+                        CreatedAt = r.GetDateTime("created_at")
+                    });
+                }
+            }
+
+            var byId = list.ToDictionary(b => b.Id);
+
+            using (var cmd = new MySqlCommand(
+                "SELECT id, bill_id, description, category, quantity, unit_price, amount FROM bill_items", conn))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    Bill bill;
+                    if (!byId.TryGetValue(r.GetInt32("bill_id"), out bill)) continue;
+
+                    BillCategory category;
+                    if (!Enum.TryParse(r.GetString("category"), out category))
+                        category = BillCategory.Other;
+
+                    bill.Items.Add(new BillItem
+                    {
+                        Id = r.GetInt32("id"),
+                        BillId = bill.Id,
+                        Description = r.GetString("description"),
+                        Category = category,
+                        Quantity = r.GetInt32("quantity"),
+                        UnitPrice = r.GetDecimal("unit_price"),
+                        Amount = r.GetDecimal("amount")
+                    });
+                }
+            }
+
+            using (var cmd = new MySqlCommand(
+                "SELECT id, bill_id, amount, payment_method, payment_date, reference_no, received_by FROM payments", conn))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    Bill bill;
+                    if (!byId.TryGetValue(r.GetInt32("bill_id"), out bill)) continue;
+
+                    PaymentMethod method;
+                    Enum.TryParse(r.GetString("payment_method"), out method);
+
+                    bill.Payments.Add(new Payment
+                    {
+                        Id = r.GetInt32("id"),
+                        BillId = bill.Id,
+                        Amount = r.GetDecimal("amount"),
+                        Method = method,
+                        PaymentDate = r.GetDateTime("payment_date"),
+                        ReferenceNo = r.IsDBNull(r.GetOrdinal("reference_no")) ? null : r.GetString("reference_no"),
+                        ReceivedBy = r.IsDBNull(r.GetOrdinal("received_by")) ? null : r.GetString("received_by")
+                    });
+                }
+            }
+
             return list;
         }
 
@@ -494,6 +635,45 @@ namespace HospitalSystem.Data
             LogActivity("Appointments", status, $"{status} appointment for {PatientName(a.PatientId)}", icon);
         }
 
+        public static void CancelAppointment(Appointment a)
+        {
+            a.Cancel();
+            UpdateAppointmentStatus(a, a.Status);
+        }
+
+        public static void CompleteAppointment(Appointment a)
+        {
+            a.MarkAsCompleted();
+            UpdateAppointmentStatus(a, a.Status);
+        }
+
+        public static void RescheduleAppointment(Appointment a, DateTime newDate)
+        {
+            DateTime oldDate = a.ScheduledOn;
+            a.Reschedule(newDate);
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE appointments SET scheduled_on=@scheduledOn WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@scheduledOn", a.ScheduledOn);
+                cmd.Parameters.AddWithValue("@id", a.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity("Appointments", "Rescheduled",
+                $"Rescheduled appointment for {PatientName(a.PatientId)}: {oldDate:yyyy-MM-dd HH:mm} → {a.ScheduledOn:yyyy-MM-dd HH:mm}", "🔁");
+        }
+
+        // Same 30-minute window the Schedule button uses; ignoreId lets a reschedule skip itself.
+        public static bool HasAppointmentClash(int doctorId, DateTime when, int ignoreId = 0)
+        {
+            return Appointments.Any(a =>
+                a.Id != ignoreId &&
+                a.DoctorId == doctorId &&
+                a.Status != "Cancelled" &&
+                Math.Abs((a.ScheduledOn - when).TotalMinutes) < 30);
+        }
+
         public static List<Appointment> AppointmentsToday()
         {
             return Appointments
@@ -544,8 +724,7 @@ namespace HospitalSystem.Data
         public static void Discharge(Admission a)
         {
             if (a == null) return;
-            a.DischargedOn = DateTime.Now;
-            a.Status = "Discharged";
+            a.Discharge(DateTime.Now);
 
             using (var conn = Db.OpenConnection())
             {
@@ -572,7 +751,245 @@ namespace HospitalSystem.Data
             LogActivity("Admissions", "Discharged", $"Discharged patient: {PatientName(a.PatientId)} from {BedLabel(a.BedId)}", "🚪");
         }
 
+        public static void CancelAdmission(Admission a)
+        {
+            a.Cancel();
+
+            using (var conn = Db.OpenConnection())
+            {
+                using (var cmd = new MySqlCommand("UPDATE admissions SET status=@status WHERE id=@id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@status", a.Status);
+                    cmd.Parameters.AddWithValue("@id", a.Id);
+                    cmd.ExecuteNonQuery();
+                }
+
+                using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=0 WHERE id=@id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@id", a.BedId);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            var bed = GetBed(a.BedId);
+            if (bed != null)
+                bed.IsOccupied = false;
+
+            LogActivity("Admissions", "Cancelled", $"Cancelled admission {a.AdmissionNo} for {PatientName(a.PatientId)}", "❌");
+        }
+
         public static List<Admission> ActiveAdmissions() => Admissions.Where(a => a.Status == "Active").ToList();
+
+        // -------------------- Billing --------------------
+        public const decimal ConsultationFee = 500m;
+
+        // Daily room rate by ward, used when generating a bill from an admission.
+        public static decimal RoomRate(string ward)
+        {
+            switch (ward)
+            {
+                case "ICU": return 8000m;
+                case "Private": return 3000m;
+                default: return 1500m;
+            }
+        }
+
+        public static Bill GetBill(int id) => Bills.FirstOrDefault(b => b.Id == id);
+
+        public static Bill OpenBillForAdmission(int admissionId) =>
+            Bills.FirstOrDefault(b => b.AdmissionId == admissionId && b.Status != BillStatus.Cancelled);
+
+        public static Bill OpenBillForAppointment(int appointmentId) =>
+            Bills.FirstOrDefault(b => b.AppointmentId == appointmentId && b.Status != BillStatus.Cancelled);
+
+        public static decimal OutstandingBalance() =>
+            Bills.Where(b => b.Status != BillStatus.Cancelled).Sum(b => b.Balance);
+
+        // Starting line items for a bill: room charges for the stay, or the consultation fee.
+        public static List<BillItem> DefaultChargesFor(Admission admission, Appointment appointment)
+        {
+            var items = new List<BillItem>();
+
+            if (admission != null)
+            {
+                var bed = GetBed(admission.BedId);
+                items.Add(new BillItem
+                {
+                    Description = "Room charge - " + BedLabel(admission.BedId),
+                    Category = BillCategory.Room,
+                    Quantity = admission.CalculateDaysStayed(),
+                    UnitPrice = RoomRate(bed != null ? bed.Ward : null)
+                });
+            }
+
+            if (appointment != null)
+            {
+                items.Add(new BillItem
+                {
+                    Description = "Consultation - " + DoctorName(appointment.DoctorId),
+                    Category = BillCategory.Consultation,
+                    Quantity = 1,
+                    UnitPrice = ConsultationFee
+                });
+            }
+
+            return items;
+        }
+
+        public static Bill CreateBill(Bill b, IEnumerable<BillItem> items)
+        {
+            b.BillDate = b.BillDate == default ? DateTime.Now : b.BillDate;
+            b.CreatedAt = DateTime.Now;
+            b.CreatedBy = CurrentUser != null ? CurrentUser.Username : null;
+            b.Status = BillStatus.Unpaid;
+            foreach (var item in items)
+                b.AddItem(item);
+
+            using (var conn = Db.OpenConnection())
+            using (var tx = conn.BeginTransaction())
+            {
+                using (var cmd = new MySqlCommand(
+                    "INSERT INTO bills (patient_id, admission_id, appointment_id, bill_date, total_amount, amount_paid, " +
+                    "balance, status, notes, created_by, created_at) " +
+                    "VALUES (@patientId, @admissionId, @appointmentId, @billDate, @total, @paid, @balance, @status, " +
+                    "@notes, @createdBy, @createdAt); SELECT LAST_INSERT_ID();", conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@patientId", b.PatientId);
+                    cmd.Parameters.AddWithValue("@admissionId", (object)b.AdmissionId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@appointmentId", (object)b.AppointmentId ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@billDate", b.BillDate);
+                    cmd.Parameters.AddWithValue("@total", b.TotalAmount);
+                    cmd.Parameters.AddWithValue("@paid", b.AmountPaid);
+                    cmd.Parameters.AddWithValue("@balance", b.Balance);
+                    cmd.Parameters.AddWithValue("@status", b.Status.ToString());
+                    cmd.Parameters.AddWithValue("@notes", (object)b.Notes ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@createdBy", (object)b.CreatedBy ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@createdAt", b.CreatedAt);
+                    b.Id = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+
+                foreach (var item in b.Items)
+                {
+                    item.BillId = b.Id;
+                    InsertBillItem(item, conn, tx);
+                }
+
+                tx.Commit();
+            }
+
+            Bills.Add(b);
+            LogActivity("Billing", "Created", $"Bill {b.BillNo} created for {PatientName(b.PatientId)} ({b.TotalAmount:N2})", "🧾");
+            return b;
+        }
+
+        public static void AddBillItem(Bill b, BillItem item)
+        {
+            b.AddItem(item);
+
+            using (var conn = Db.OpenConnection())
+            using (var tx = conn.BeginTransaction())
+            {
+                InsertBillItem(item, conn, tx);
+                SaveBillTotals(b, conn, tx);
+                tx.Commit();
+            }
+
+            LogActivity("Billing", "Item Added", $"Added \"{item.Description}\" to {b.BillNo} ({item.Amount:N2})", "🧾");
+        }
+
+        public static void RemoveBillItem(Bill b, int itemId)
+        {
+            var item = b.Items.FirstOrDefault(i => i.Id == itemId);
+            b.RemoveItem(itemId);
+
+            using (var conn = Db.OpenConnection())
+            using (var tx = conn.BeginTransaction())
+            {
+                using (var cmd = new MySqlCommand("DELETE FROM bill_items WHERE id=@id", conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@id", itemId);
+                    cmd.ExecuteNonQuery();
+                }
+                SaveBillTotals(b, conn, tx);
+                tx.Commit();
+            }
+
+            LogActivity("Billing", "Item Removed", $"Removed \"{item.Description}\" from {b.BillNo}", "🧾");
+        }
+
+        public static void RecordPayment(Bill b, Payment p)
+        {
+            if (p.PaymentDate == default)
+                p.PaymentDate = DateTime.Now;
+            p.ReceivedBy = CurrentUser != null ? CurrentUser.DisplayName : null;
+            b.ApplyPayment(p);
+
+            using (var conn = Db.OpenConnection())
+            using (var tx = conn.BeginTransaction())
+            {
+                using (var cmd = new MySqlCommand(
+                    "INSERT INTO payments (bill_id, amount, payment_method, payment_date, reference_no, received_by) " +
+                    "VALUES (@billId, @amount, @method, @date, @ref, @receivedBy); SELECT LAST_INSERT_ID();", conn, tx))
+                {
+                    cmd.Parameters.AddWithValue("@billId", p.BillId);
+                    cmd.Parameters.AddWithValue("@amount", p.Amount);
+                    cmd.Parameters.AddWithValue("@method", p.Method.ToString());
+                    cmd.Parameters.AddWithValue("@date", p.PaymentDate);
+                    cmd.Parameters.AddWithValue("@ref", (object)p.ReferenceNo ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@receivedBy", (object)p.ReceivedBy ?? DBNull.Value);
+                    p.Id = Convert.ToInt32(cmd.ExecuteScalar());
+                }
+                SaveBillTotals(b, conn, tx);
+                tx.Commit();
+            }
+
+            LogActivity("Billing", "Payment", $"Payment of {p.Amount:N2} ({p.Method}) received for {b.BillNo}", "💰");
+        }
+
+        public static void CancelBill(Bill b)
+        {
+            b.MarkAsCancelled();
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE bills SET status=@status WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@status", b.Status.ToString());
+                cmd.Parameters.AddWithValue("@id", b.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity("Billing", "Cancelled", $"Cancelled bill {b.BillNo} for {PatientName(b.PatientId)}", "❌");
+        }
+
+        private static void InsertBillItem(BillItem item, MySqlConnection conn, MySqlTransaction tx)
+        {
+            using (var cmd = new MySqlCommand(
+                "INSERT INTO bill_items (bill_id, description, category, quantity, unit_price, amount) " +
+                "VALUES (@billId, @description, @category, @quantity, @unitPrice, @amount); SELECT LAST_INSERT_ID();", conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@billId", item.BillId);
+                cmd.Parameters.AddWithValue("@description", item.Description);
+                cmd.Parameters.AddWithValue("@category", item.Category.ToString());
+                cmd.Parameters.AddWithValue("@quantity", item.Quantity);
+                cmd.Parameters.AddWithValue("@unitPrice", item.UnitPrice);
+                cmd.Parameters.AddWithValue("@amount", item.Amount);
+                item.Id = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+        }
+
+        private static void SaveBillTotals(Bill b, MySqlConnection conn, MySqlTransaction tx)
+        {
+            using (var cmd = new MySqlCommand(
+                "UPDATE bills SET total_amount=@total, amount_paid=@paid, balance=@balance, status=@status WHERE id=@id", conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@total", b.TotalAmount);
+                cmd.Parameters.AddWithValue("@paid", b.AmountPaid);
+                cmd.Parameters.AddWithValue("@balance", b.Balance);
+                cmd.Parameters.AddWithValue("@status", b.Status.ToString());
+                cmd.Parameters.AddWithValue("@id", b.Id);
+                cmd.ExecuteNonQuery();
+            }
+        }
 
         // -------------------- Beds & Helpers --------------------
         public static Bed GetBed(int id) => Beds.FirstOrDefault(b => b.Id == id);

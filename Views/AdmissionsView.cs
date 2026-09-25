@@ -13,7 +13,7 @@ namespace HospitalSystem.Views
         private DataGridView gridBeds;
         private ComboBox cmbPatient, cmbDoctor, cmbBed;
         private TextBox txtDiagnosis;
-        private Button btnAdmit, btnDischarge;
+        private Button btnAdmit, btnDischarge, btnCancelAdmission;
         private Panel formPanel;
         private Label title;
         private Label lblP;
@@ -27,6 +27,7 @@ namespace HospitalSystem.Views
         {
             InitializeComponent();
             WireEvents();
+            BuildExtraButtons();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -47,6 +48,17 @@ namespace HospitalSystem.Views
         {
             btnAdmit.Click += BtnAdmit_Click;
             btnDischarge.Click += BtnDischarge_Click;
+        }
+
+        // Built in code (not InitializeComponent) for the same reason as WireEvents().
+        private void BuildExtraButtons()
+        {
+            btnCancelAdmission = new Button();
+            btnCancelAdmission.Text = "Cancel Admission";
+            btnCancelAdmission.Location = new Point(670, 10);
+            btnCancelAdmission.Size = new Size(130, 30);
+            btnCancelAdmission.Click += BtnCancelAdmission_Click;
+            formPanel.Controls.Add(btnCancelAdmission);
         }
 
         private void InitializeComponent()
@@ -356,7 +368,7 @@ namespace HospitalSystem.Views
 
             if (adm.Status != "Active")
             {
-                MessageBox.Show("This admission is already discharged.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("This admission is already " + adm.Status.ToLower() + ".", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
@@ -365,6 +377,30 @@ namespace HospitalSystem.Views
             {
                 HospitalData.Discharge(adm);
                 MessageBox.Show("Patient discharged. Stay: " + adm.DaysStayed + " day(s).", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                LoadCombos();
+                LoadAdmissions();
+                LoadBeds();
+            }
+        }
+
+        private void BtnCancelAdmission_Click(object sender, EventArgs e)
+        {
+            if (gridAdmissions.CurrentRow == null) return;
+            int id = Convert.ToInt32(gridAdmissions.CurrentRow.Cells["Id"].Value);
+            var adm = HospitalData.Admissions.FirstOrDefault(a => a.Id == id);
+            if (adm == null) return;
+
+            if (!adm.IsActive)
+            {
+                MessageBox.Show("Only active admissions can be cancelled.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            if (MessageBox.Show("Cancel this admission? Use this only for admissions entered by mistake: " +
+                "the bed is freed and no stay is recorded.", "Confirm Cancel",
+                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+            {
+                HospitalData.CancelAdmission(adm);
                 LoadCombos();
                 LoadAdmissions();
                 LoadBeds();

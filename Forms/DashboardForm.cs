@@ -18,6 +18,7 @@ namespace HospitalSystem.Forms
         private Button btnDoctors;
         private Button btnAppointments;
         private Button btnAdmissions;
+        private Button btnBilling;
         private Button btnSignOut;
         private UserControl currentView;
 
@@ -64,6 +65,10 @@ namespace HospitalSystem.Forms
             btnAdmissions.Click += BtnAdmissions_Click;
             panelSidebar.Controls.Add(btnAdmissions);
 
+            btnBilling = CreateNavButton("Billing", 320);
+            btnBilling.Click += BtnBilling_Click;
+            panelSidebar.Controls.Add(btnBilling);
+
             AddSidebarSeparators();
         }
 
@@ -80,6 +85,7 @@ namespace HospitalSystem.Forms
             panelSidebar.Controls.Add(CreateSeparator(166, false));
             panelSidebar.Controls.Add(CreateSeparator(216, false));
             panelSidebar.Controls.Add(CreateSeparator(266, false));
+            panelSidebar.Controls.Add(CreateSeparator(316, false));
 
             // above the user / sign-out block pinned at the bottom
             Panel bottomLine = new Panel();
@@ -125,6 +131,7 @@ namespace HospitalSystem.Forms
         private void BtnDoctors_Click(object sender, EventArgs e) => ShowView(new Views.DoctorsView());
         private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(new Views.AppointmentsView());
         private void BtnAdmissions_Click(object sender, EventArgs e) => ShowView(new Views.AdmissionsView());
+        private void BtnBilling_Click(object sender, EventArgs e) => ShowView(new Views.BillingView());
 
         private void InitializeComponent()
         {
