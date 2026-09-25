@@ -28,13 +28,19 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 
 ## Setup
 
-### 1. Start MySQL
+### 1. Clone the repository
+
+```
+git clone https://github.com/cuartechrisie06/HospitalSystem.git
+```
+
+### 2. Start MySQL
 
 Open the **XAMPP Control Panel** and click **Start** next to **MySQL**.
 
 > If you also have the `MySQL80` Windows service installed, leave it stopped — both use port 3306 and will conflict.
 
-### 2. Create the database
+### 3. Create the database
 
 Import `Data/schema.sql`. It creates the `hospital_system` database, all 12 tables, and the seed data
 (2 users, 4 departments, 5 doctors, 12 beds, 3 patients).
@@ -50,11 +56,16 @@ Or in **phpMyAdmin** (`http://localhost/phpmyadmin`): Import → choose `Data/sc
 > Already imported the database before billing was added? No need to re-import:
 > the app creates the `bills`, `bill_items` and `payments` tables on startup if they are missing.
 
-### 3. Run the app
+### 4. Run the app
 
 1. Open `HospitalSystemClean.sln` in Visual Studio.
-2. Build once — Visual Studio restores the NuGet packages automatically.
-   (If it doesn't: right-click the solution → **Restore NuGet Packages**.)
+2. Build once — Visual Studio restores the NuGet packages automatically into a new `packages/` folder
+   (that folder is gitignored, so it won't exist right after cloning — that's expected, not a missing-files problem).
+   If it doesn't restore on its own:
+   - Right-click the solution → **Restore NuGet Packages**, or
+   - Make sure **Tools → Options → NuGet Package Manager → Allow NuGet to download missing packages** is checked, or
+   - Run `nuget restore packages.config -PackagesDirectory packages` from a command prompt in the project folder
+     (grab `nuget.exe` from [nuget.org/downloads](https://www.nuget.org/downloads) if you don't have it).
 3. Press **F5**.
 
 MySQL must be running *before* you launch the app, otherwise it will fail when it loads data.
@@ -86,7 +97,7 @@ Change it there if your MySQL uses a different port, user or password.
 | Problem | Cause | Fix |
 |---|---|---|
 | `Unable to connect to any of the specified MySQL hosts` | MySQL is not running | Start MySQL in XAMPP |
-| `Unknown database 'hospital_system'` | Schema not imported | Run step 2 above |
+| `Unknown database 'hospital_system'` | Schema not imported | Run step 3 above |
 | `The type or namespace name 'MySql' could not be found` | NuGet packages not restored | Right-click solution → Restore NuGet Packages, then rebuild |
 | Port 3306 already in use | Two MySQL servers running | Stop the `MySQL80` service, keep only XAMPP's |
 
