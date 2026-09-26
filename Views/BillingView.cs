@@ -337,10 +337,11 @@ namespace HospitalSystem.Views
         // -------------------- Loading --------------------
         private void LoadPatients()
         {
-            cmbPatient.DataSource = HospitalData.ActivePatients();
-            cmbPatient.DisplayMember = "ToString";
+            cmbPatient.DisplayMember = "Name";
             cmbPatient.ValueMember = "Id";
+            cmbPatient.DataSource = HospitalData.ActivePatients().ToList();
         }
+        
 
         private void CmbPatient_SelectedIndexChanged(object sender, EventArgs e)
         {

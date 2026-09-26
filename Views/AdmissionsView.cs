@@ -278,19 +278,21 @@ namespace HospitalSystem.Views
 
         private void LoadCombos()
         {
-            // Only patients not currently admitted
             var admittedIds = HospitalData.ActiveAdmissions().Select(a => a.PatientId).ToHashSet();
-            cmbPatient.DataSource = HospitalData.ActivePatients().Where(p => !admittedIds.Contains(p.Id)).ToList();
-            cmbPatient.DisplayMember = "ToString";
+
+            cmbPatient.DisplayMember = "Name";
             cmbPatient.ValueMember = "Id";
+            cmbPatient.DataSource = HospitalData.ActivePatients()
+                .Where(p => !admittedIds.Contains(p.Id))
+                .ToList();
 
-            cmbDoctor.DataSource = HospitalData.ActiveDoctors();
-            cmbDoctor.DisplayMember = "ToString";
+            cmbDoctor.DisplayMember = "Name";
             cmbDoctor.ValueMember = "Id";
+            cmbDoctor.DataSource = HospitalData.ActiveDoctors().ToList();
 
-            cmbBed.DataSource = HospitalData.AvailableBeds();
             cmbBed.DisplayMember = "Label";
             cmbBed.ValueMember = "Id";
+            cmbBed.DataSource = HospitalData.AvailableBeds();
         }
 
         private void LoadAdmissions()
