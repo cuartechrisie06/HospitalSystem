@@ -144,6 +144,9 @@
     <EmbeddedResource Include="Views\AdmissionsView.resx">
       <DependentUpon>AdmissionsView.cs</DependentUpon>
     </EmbeddedResource>
+    <EmbeddedResource Include="Views\AppointmentsView.resx">
+      <DependentUpon>AppointmentsView.cs</DependentUpon>
+    </EmbeddedResource>
     <EmbeddedResource Include="Views\PatientsView.resx">
       <DependentUpon>PatientsView.cs</DependentUpon>
     </EmbeddedResource>
