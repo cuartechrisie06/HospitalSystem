@@ -9,322 +9,355 @@ namespace HospitalSystem.Views
 {
     public class AppointmentsView : UserControl
     {
-        private DataGridView grid;
-        private ComboBox cmbPatient, cmbDepartment, cmbDoctor;
+        private const string PatientSearchPlaceholder = "Search active patients by ID, name, or contact...";
+
+        // Scheduling form
+        private DataGridView gridPatients;
+        private TextBox txtPatientSearch;
+        private Label lblSelectedPatient;
+        private ComboBox cmbDepartment, cmbDoctor;
         private DateTimePicker dtpDate;
         private TextBox txtReason;
-        private Button btnSchedule, btnConfirm, btnCancel, btnReschedule, btnComplete;
-        private Panel formPanel;
-        private Label title;
-        private Label lblP;
-        private Label lblD;
-        private Label lblDoc;
-        private Label lblDate;
-        private Label lblR;
-        private Label lblList;
-        private Panel btnPanel;
-        private Label lblStatus;
+        private Button btnSchedule;
+
+        // Appointments list + actions
+        private DataGridView grid;
+        private Button btnConfirm, btnCancel, btnReschedule, btnComplete;
+
+        private int selectedPatientId = 0;
+        private bool patientSearchPlaceholderActive = true;
 
         public AppointmentsView()
         {
             InitializeComponent();
-
-            // Wire events
-            cmbDepartment.SelectedIndexChanged += CmbDepartment_SelectedIndexChanged;
-            btnSchedule.Click += BtnSchedule_Click;
-            btnConfirm.Click += BtnConfirm_Click;
-            btnCancel.Click += BtnCancel_Click;
-            btnReschedule.Click += BtnReschedule_Click;
-            btnComplete.Click += BtnComplete_Click;
+            WireEvents();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
             {
+                LoadDepartments();
+                LoadDoctors();
+                LoadPatientList("");
                 LoadAppointments();
-                LoadCombos();
             }
+        }
+
+        // Wired in plain code (not InitializeComponent) so it survives a Designer save,
+        // matching the convention used by the other views in this project.
+        private void WireEvents()
+        {
+            txtPatientSearch.Enter += TxtPatientSearch_Enter;
+            txtPatientSearch.Leave += TxtPatientSearch_Leave;
+            txtPatientSearch.TextChanged += TxtPatientSearch_TextChanged;
+            gridPatients.CellClick += GridPatients_CellClick;
+
+            btnSchedule.Click += BtnSchedule_Click;
+            btnConfirm.Click += BtnConfirm_Click;
+            btnCancel.Click += BtnCancel_Click;
+            btnReschedule.Click += BtnReschedule_Click;
+            btnComplete.Click += BtnComplete_Click;
         }
 
         private void InitializeComponent()
         {
-            this.formPanel = new System.Windows.Forms.Panel();
-            this.title = new System.Windows.Forms.Label();
-            this.lblP = new System.Windows.Forms.Label();
-            this.cmbPatient = new System.Windows.Forms.ComboBox();
-            this.lblD = new System.Windows.Forms.Label();
-            this.cmbDepartment = new System.Windows.Forms.ComboBox();
-            this.lblDoc = new System.Windows.Forms.Label();
-            this.cmbDoctor = new System.Windows.Forms.ComboBox();
-            this.lblDate = new System.Windows.Forms.Label();
-            this.dtpDate = new System.Windows.Forms.DateTimePicker();
-            this.lblR = new System.Windows.Forms.Label();
-            this.txtReason = new System.Windows.Forms.TextBox();
-            this.btnSchedule = new System.Windows.Forms.Button();
-            this.lblList = new System.Windows.Forms.Label();
-            this.btnPanel = new System.Windows.Forms.Panel();
-            this.btnConfirm = new System.Windows.Forms.Button();
-            this.btnCancel = new System.Windows.Forms.Button();
-            this.btnReschedule = new System.Windows.Forms.Button();
-            this.btnComplete = new System.Windows.Forms.Button();
-            this.grid = new System.Windows.Forms.DataGridView();
-            this.formPanel.SuspendLayout();
-            this.btnPanel.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)(this.grid)).BeginInit();
-            this.SuspendLayout();
-            // 
-            // formPanel
-            // 
-            this.formPanel.BackColor = System.Drawing.Color.White;
-            this.formPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            this.formPanel.Controls.Add(this.title);
-            this.formPanel.Controls.Add(this.lblP);
-            this.formPanel.Controls.Add(this.cmbPatient);
-            this.formPanel.Controls.Add(this.lblD);
-            this.formPanel.Controls.Add(this.cmbDepartment);
-            this.formPanel.Controls.Add(this.lblDoc);
-            this.formPanel.Controls.Add(this.cmbDoctor);
-            this.formPanel.Controls.Add(this.lblDate);
-            this.formPanel.Controls.Add(this.dtpDate);
-            this.formPanel.Controls.Add(this.lblR);
-            this.formPanel.Controls.Add(this.txtReason);
-            this.formPanel.Controls.Add(this.btnSchedule);
-            this.formPanel.Dock = System.Windows.Forms.DockStyle.Top;
-            this.formPanel.Location = new System.Drawing.Point(10, 80);
-            this.formPanel.Name = "formPanel";
-            this.formPanel.Padding = new System.Windows.Forms.Padding(15);
-            this.formPanel.Size = new System.Drawing.Size(1454, 200);
-            this.formPanel.TabIndex = 0;
-            // 
-            // title
-            // 
-            this.title.AutoSize = true;
-            this.title.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
-            this.title.Location = new System.Drawing.Point(15, 10);
-            this.title.Name = "title";
-            this.title.Size = new System.Drawing.Size(275, 32);
-            this.title.TabIndex = 0;
-            this.title.Text = "Schedule Appointment";
-            // 
-            // lblP
-            // 
-            this.lblP.AutoSize = true;
-            this.lblP.Location = new System.Drawing.Point(15, 45);
-            this.lblP.Name = "lblP";
-            this.lblP.Size = new System.Drawing.Size(59, 20);
-            this.lblP.TabIndex = 1;
-            this.lblP.Text = "Patient";
-            // 
-            // cmbPatient
-            // 
-            this.cmbPatient.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbPatient.Location = new System.Drawing.Point(15, 65);
-            this.cmbPatient.Name = "cmbPatient";
-            this.cmbPatient.Size = new System.Drawing.Size(250, 28);
-            this.cmbPatient.TabIndex = 2;
-            // 
-            // lblD
-            // 
-            this.lblD.AutoSize = true;
-            this.lblD.Location = new System.Drawing.Point(280, 45);
-            this.lblD.Name = "lblD";
-            this.lblD.Size = new System.Drawing.Size(94, 20);
-            this.lblD.TabIndex = 3;
-            this.lblD.Text = "Department";
-            // 
-            // cmbDepartment
-            // 
-            this.cmbDepartment.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbDepartment.Location = new System.Drawing.Point(280, 65);
-            this.cmbDepartment.Name = "cmbDepartment";
-            this.cmbDepartment.Size = new System.Drawing.Size(200, 28);
-            this.cmbDepartment.TabIndex = 4;
-            // 
-            // lblDoc
-            // 
-            this.lblDoc.AutoSize = true;
-            this.lblDoc.Location = new System.Drawing.Point(500, 45);
-            this.lblDoc.Name = "lblDoc";
-            this.lblDoc.Size = new System.Drawing.Size(57, 20);
-            this.lblDoc.TabIndex = 5;
-            this.lblDoc.Text = "Doctor";
-            // 
-            // cmbDoctor
-            // 
-            this.cmbDoctor.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbDoctor.Location = new System.Drawing.Point(500, 65);
-            this.cmbDoctor.Name = "cmbDoctor";
-            this.cmbDoctor.Size = new System.Drawing.Size(220, 28);
-            this.cmbDoctor.TabIndex = 6;
-            // 
-            // lblDate
-            // 
-            this.lblDate.AutoSize = true;
-            this.lblDate.Location = new System.Drawing.Point(15, 105);
-            this.lblDate.Name = "lblDate";
-            this.lblDate.Size = new System.Drawing.Size(86, 20);
-            this.lblDate.TabIndex = 7;
-            this.lblDate.Text = "Date & Time";
-            // 
-            // dtpDate
-            // 
-            this.dtpDate.CustomFormat = "yyyy-MM-dd HH:mm";
-            this.dtpDate.Format = System.Windows.Forms.DateTimePickerFormat.Custom;
-            this.dtpDate.Location = new System.Drawing.Point(15, 125);
-            this.dtpDate.MinDate = new System.DateTime(2026, 9, 26, 0, 0, 0, 0);
-            this.dtpDate.Name = "dtpDate";
-            this.dtpDate.Size = new System.Drawing.Size(250, 26);
-            this.dtpDate.TabIndex = 8;
-            // 
-            // lblR
-            // 
-            this.lblR.AutoSize = true;
-            this.lblR.Location = new System.Drawing.Point(280, 105);
-            this.lblR.Name = "lblR";
-            this.lblR.Size = new System.Drawing.Size(65, 20);
-            this.lblR.TabIndex = 9;
-            this.lblR.Text = "Reason";
-            // 
-            // txtReason
-            // 
-            this.txtReason.Location = new System.Drawing.Point(280, 125);
-            this.txtReason.Name = "txtReason";
-            this.txtReason.Size = new System.Drawing.Size(440, 26);
-            this.txtReason.TabIndex = 10;
-            // 
-            // btnSchedule
-            // 
-            this.btnSchedule.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
-            this.btnSchedule.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
-            this.btnSchedule.ForeColor = System.Drawing.Color.White;
-            this.btnSchedule.Location = new System.Drawing.Point(15, 160);
-            this.btnSchedule.Name = "btnSchedule";
-            this.btnSchedule.Size = new System.Drawing.Size(180, 32);
-            this.btnSchedule.TabIndex = 11;
-            this.btnSchedule.Text = "Schedule Appointment";
-            this.btnSchedule.UseVisualStyleBackColor = false;
-            // 
-            // lblList
-            // 
-            this.lblList.Dock = System.Windows.Forms.DockStyle.Top;
-            this.lblList.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
-            this.lblList.Location = new System.Drawing.Point(10, 50);
-            this.lblList.Name = "lblList";
-            this.lblList.Size = new System.Drawing.Size(1454, 30);
-            this.lblList.TabIndex = 1;
-            this.lblList.Text = "Appointments";
-            // 
-            // btnPanel
-            // 
-            this.btnPanel.Controls.Add(this.btnConfirm);
-            this.btnPanel.Controls.Add(this.btnCancel);
-            this.btnPanel.Controls.Add(this.btnReschedule);
-            this.btnPanel.Controls.Add(this.btnComplete);
-            this.btnPanel.Dock = System.Windows.Forms.DockStyle.Top;
-            this.btnPanel.Location = new System.Drawing.Point(10, 10);
-            this.btnPanel.Name = "btnPanel";
-            this.btnPanel.Size = new System.Drawing.Size(1454, 40);
-            this.btnPanel.TabIndex = 2;
-            // 
-            // btnConfirm
-            // 
-            this.btnConfirm.Location = new System.Drawing.Point(0, 5);
-            this.btnConfirm.Name = "btnConfirm";
-            this.btnConfirm.Size = new System.Drawing.Size(140, 30);
-            this.btnConfirm.TabIndex = 0;
-            this.btnConfirm.Text = "Confirm Selected";
-            // 
-            // btnCancel
-            // 
-            this.btnCancel.Location = new System.Drawing.Point(150, 5);
-            this.btnCancel.Name = "btnCancel";
-            this.btnCancel.Size = new System.Drawing.Size(140, 30);
-            this.btnCancel.TabIndex = 1;
-            this.btnCancel.Text = "Cancel Selected";
-            // 
-            // btnReschedule
-            // 
-            this.btnReschedule.Location = new System.Drawing.Point(300, 5);
-            this.btnReschedule.Name = "btnReschedule";
-            this.btnReschedule.Size = new System.Drawing.Size(150, 30);
-            this.btnReschedule.TabIndex = 2;
-            this.btnReschedule.Text = "Reschedule Selected";
-            // 
-            // btnComplete
-            // 
-            this.btnComplete.Location = new System.Drawing.Point(460, 5);
-            this.btnComplete.Name = "btnComplete";
-            this.btnComplete.Size = new System.Drawing.Size(140, 30);
-            this.btnComplete.TabIndex = 3;
-            this.btnComplete.Text = "Mark Completed";
-            // 
-            // grid
-            // 
-            this.grid.AllowUserToAddRows = false;
-            this.grid.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
-            this.grid.BackgroundColor = System.Drawing.Color.White;
-            this.grid.ColumnHeadersHeight = 34;
-            this.grid.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.grid.Location = new System.Drawing.Point(10, 10);
-            this.grid.MultiSelect = false;
-            this.grid.Name = "grid";
-            this.grid.ReadOnly = true;
-            this.grid.RowHeadersVisible = false;
-            this.grid.RowHeadersWidth = 62;
-            this.grid.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.grid.Size = new System.Drawing.Size(1454, 824);
-            this.grid.TabIndex = 3;
-            // 
-            // AppointmentsView
-            // 
-            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
-            this.Controls.Add(this.formPanel);
-            this.Controls.Add(this.lblList);
-            this.Controls.Add(this.btnPanel);
-            this.Controls.Add(this.grid);
-            this.Name = "AppointmentsView";
-            this.Padding = new System.Windows.Forms.Padding(10);
-            this.Size = new System.Drawing.Size(1474, 844);
-            this.formPanel.ResumeLayout(false);
-            this.formPanel.PerformLayout();
-            this.btnPanel.ResumeLayout(false);
-            ((System.ComponentModel.ISupportInitialize)(this.grid)).EndInit();
-            this.ResumeLayout(false);
+            this.BackColor = Color.FromArgb(243, 244, 246);
+            this.Padding = new Padding(10);
+
+            // Deterministic top-to-bottom layout: schedule card, list header, action bar, grid.
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 4,
+                BackColor = Color.FromArgb(243, 244, 246)
+            };
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 372));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            this.Controls.Add(root);
+
+            root.Controls.Add(BuildScheduleCard(), 0, 0);
+
+            var lblList = new Label
+            {
+                Text = "Appointments",
+                Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                ForeColor = Color.FromArgb(30, 41, 59)
+            };
+            root.Controls.Add(lblList, 0, 1);
+
+            root.Controls.Add(BuildActionBar(), 0, 2);
+
+            grid = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                ReadOnly = true,
+                RowHeadersVisible = false,
+                MultiSelect = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                BackgroundColor = Color.White,
+                ColumnHeadersHeight = 34
+            };
+            root.Controls.Add(grid, 0, 3);
         }
 
-        private void LoadCombos()
+        private Panel BuildScheduleCard()
         {
-            // Patient
-            cmbPatient.DisplayMember = "Name";
-            cmbPatient.ValueMember = "Id";
-            cmbPatient.DataSource = HospitalData.ActivePatients();
+            var card = new Panel
+            {
+                Dock = DockStyle.Fill,
+                BackColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                Padding = new Padding(12),
+                Margin = new Padding(0, 0, 0, 8)
+            };
 
-            // Department
+            var title = new Label
+            {
+                Text = "Schedule Appointment",
+                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(30, 41, 59),
+                Dock = DockStyle.Top,
+                Height = 30
+            };
+
+            var inner = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 1
+            };
+            inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46F));
+            inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54F));
+
+            inner.Controls.Add(BuildPatientPicker(), 0, 0);
+            inner.Controls.Add(BuildFieldsPanel(), 1, 0);
+
+            card.Controls.Add(inner);
+            card.Controls.Add(title);
+            inner.BringToFront();
+            return card;
+        }
+
+        // Left column: searchable table of ACTIVE patients (replaces the old combo box).
+        private Panel BuildPatientPicker()
+        {
+            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 0, 10, 0) };
+
+            var lblHdr = new Label
+            {
+                Text = "1. Search & select an active patient",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(55, 65, 81),
+                Dock = DockStyle.Top,
+                Height = 22
+            };
+
+            txtPatientSearch = new TextBox
+            {
+                Dock = DockStyle.Top,
+                Font = new Font("Segoe UI", 10F),
+                Text = PatientSearchPlaceholder,
+                ForeColor = Color.Gray
+            };
+            // A little breathing room under the search box.
+            var spacer = new Panel { Dock = DockStyle.Top, Height = 6 };
+
+            gridPatients = new DataGridView
+            {
+                Dock = DockStyle.Fill,
+                AllowUserToAddRows = false,
+                ReadOnly = true,
+                RowHeadersVisible = false,
+                MultiSelect = false,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
+                BackgroundColor = Color.White,
+                BorderStyle = BorderStyle.FixedSingle,
+                AllowUserToResizeRows = false
+            };
+
+            panel.Controls.Add(gridPatients);
+            panel.Controls.Add(spacer);
+            panel.Controls.Add(txtPatientSearch);
+            panel.Controls.Add(lblHdr);
+            gridPatients.BringToFront();
+            return panel;
+        }
+
+        // Right column: the remaining appointment fields.
+        private Panel BuildFieldsPanel()
+        {
+            var panel = new Panel { Dock = DockStyle.Fill };
+
+            lblSelectedPatient = new Label
+            {
+                Text = "Selected patient:  (none — pick one from the list on the left)",
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(185, 28, 28),
+                Location = new Point(0, 4),
+                AutoSize = true,
+                MaximumSize = new Size(460, 0)
+            };
+            panel.Controls.Add(lblSelectedPatient);
+
+            AddFieldLabel(panel, "Department *", 0, 40);
+            cmbDepartment = new ComboBox
+            {
+                Location = new Point(0, 62),
+                Size = new Size(300, 28),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Segoe UI", 10F)
+            };
+            panel.Controls.Add(cmbDepartment);
+
+            AddFieldLabel(panel, "Doctor *  (active only)", 0, 96);
+            cmbDoctor = new ComboBox
+            {
+                Location = new Point(0, 118),
+                Size = new Size(300, 28),
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Font = new Font("Segoe UI", 10F)
+            };
+            panel.Controls.Add(cmbDoctor);
+
+            AddFieldLabel(panel, "Date & Time *", 0, 152);
+            dtpDate = new DateTimePicker
+            {
+                Location = new Point(0, 174),
+                Size = new Size(300, 28),
+                Font = new Font("Segoe UI", 10F),
+                Format = DateTimePickerFormat.Custom,
+                CustomFormat = "yyyy-MM-dd HH:mm",
+                MinDate = DateTime.Today
+            };
+            panel.Controls.Add(dtpDate);
+
+            AddFieldLabel(panel, "Reason", 0, 208);
+            txtReason = new TextBox
+            {
+                Location = new Point(0, 230),
+                Size = new Size(360, 28),
+                Font = new Font("Segoe UI", 10F)
+            };
+            panel.Controls.Add(txtReason);
+
+            btnSchedule = new Button
+            {
+                Text = "Schedule Appointment",
+                Location = new Point(0, 268),
+                Size = new Size(200, 36),
+                BackColor = Color.FromArgb(37, 99, 235),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                Cursor = Cursors.Hand
+            };
+            btnSchedule.FlatAppearance.BorderSize = 0;
+            panel.Controls.Add(btnSchedule);
+
+            return panel;
+        }
+
+        private Panel BuildActionBar()
+        {
+            var bar = new Panel { Dock = DockStyle.Fill };
+
+            btnConfirm = MakeActionButton("Confirm Selected", 0);
+            btnCancel = MakeActionButton("Cancel Selected", 150);
+            btnReschedule = MakeActionButton("Reschedule Selected", 300);
+            btnComplete = MakeActionButton("Mark Completed", 460);
+
+            bar.Controls.Add(btnConfirm);
+            bar.Controls.Add(btnCancel);
+            bar.Controls.Add(btnReschedule);
+            bar.Controls.Add(btnComplete);
+            return bar;
+        }
+
+        private static Button MakeActionButton(string text, int x)
+        {
+            return new Button
+            {
+                Text = text,
+                Location = new Point(x, 6),
+                Size = new Size(text.Length > 16 ? 150 : 140, 30),
+                Cursor = Cursors.Hand
+            };
+        }
+
+        private void AddFieldLabel(Panel parent, string text, int x, int y)
+        {
+            parent.Controls.Add(new Label
+            {
+                Text = text,
+                Location = new Point(x, y),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 9F),
+                ForeColor = Color.FromArgb(75, 85, 99)
+            });
+        }
+
+        // ===================== Combo / list loading =====================
+        private void LoadDepartments()
+        {
             cmbDepartment.DisplayMember = "Name";
             cmbDepartment.ValueMember = "Id";
             cmbDepartment.DataSource = HospitalData.Departments.ToList();
-
-            // Load doctors for the first department
-            if (cmbDepartment.Items.Count > 0)
-            {
-                cmbDepartment.SelectedIndex = 0;
-            }
+            cmbDepartment.SelectedIndex = cmbDepartment.Items.Count > 0 ? 0 : -1;
         }
 
-        private void CmbDepartment_SelectedIndexChanged(object sender, EventArgs e)
+        // Only active doctors can be scheduled (deactivated doctors never appear here).
+        private void LoadDoctors()
         {
-            if (cmbDepartment.SelectedValue == null) return;
-
-            int deptId = Convert.ToInt32(cmbDepartment.SelectedValue);
-
-            // Show all 5 doctors (Ana Reyes, Mark Villanueva, Liza Tan, Jose Cruz, Grace Lim)
-            var doctors = HospitalData.ActiveDoctors().ToList();
-
-            // Clear first to avoid duplicates
-            cmbDoctor.DataSource = null;
             cmbDoctor.DisplayMember = "Name";
             cmbDoctor.ValueMember = "Id";
-            cmbDoctor.DataSource = doctors;
+            cmbDoctor.DataSource = HospitalData.ActiveDoctors();
+            cmbDoctor.SelectedIndex = cmbDoctor.Items.Count > 0 ? 0 : -1;
+        }
+
+        // Only active patients are listed, so a deactivated patient can never be scheduled.
+        private void LoadPatientList(string filter)
+        {
+            var active = HospitalData.ActivePatients();
+            var source = active.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(filter))
+            {
+                string f = filter.ToLower();
+                source = source.Where(p =>
+                    p.FullName.ToLower().Contains(f) ||
+                    p.PatientNo.ToLower().Contains(f) ||
+                    (p.Contact != null && p.Contact.Contains(f)));
+            }
+
+            var rows = source
+                .OrderBy(p => p.Id)
+                .Select(p => new
+                {
+                    p.Id,
+                    No = p.PatientNo,
+                    Name = p.FullName,
+                    Age = p.Age.HasValue ? p.Age.Value.ToString() : "-",
+                    p.Gender,
+                    p.Contact
+                }).ToList();
+
+            gridPatients.DataSource = null;
+            gridPatients.DataSource = rows;
+            if (gridPatients.Columns["Id"] != null)
+                gridPatients.Columns["Id"].Visible = false;
+            if (gridPatients.Rows.Count > 0)
+                gridPatients.FirstDisplayedScrollingRowIndex = 0;
+            gridPatients.ClearSelection();
+            if (gridPatients.CurrentCell != null)
+                gridPatients.CurrentCell = null;
         }
 
         private void LoadAppointments()
@@ -347,27 +380,98 @@ namespace HospitalSystem.Views
                 grid.Columns["Id"].Visible = false;
         }
 
+        // ===================== Patient search box (placeholder + live filter) =====================
+        private void TxtPatientSearch_Enter(object sender, EventArgs e)
+        {
+            if (patientSearchPlaceholderActive)
+            {
+                txtPatientSearch.Text = "";
+                txtPatientSearch.ForeColor = Color.FromArgb(17, 24, 39);
+                patientSearchPlaceholderActive = false;
+            }
+        }
+
+        private void TxtPatientSearch_Leave(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(txtPatientSearch.Text))
+            {
+                patientSearchPlaceholderActive = true;
+                txtPatientSearch.Text = PatientSearchPlaceholder;
+                txtPatientSearch.ForeColor = Color.Gray;
+            }
+        }
+
+        private void TxtPatientSearch_TextChanged(object sender, EventArgs e)
+        {
+            if (patientSearchPlaceholderActive) return;
+            LoadPatientList(txtPatientSearch.Text.Trim());
+        }
+
+        private void GridPatients_CellClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (e.RowIndex < 0) return;
+            var idObj = gridPatients.Rows[e.RowIndex].Cells["Id"].Value;
+            if (idObj == null) return;
+
+            selectedPatientId = Convert.ToInt32(idObj);
+            var p = HospitalData.GetPatient(selectedPatientId);
+            if (p != null)
+            {
+                lblSelectedPatient.Text = "Selected patient:  " + p.FullName + "  (" + p.PatientNo + ")";
+                lblSelectedPatient.ForeColor = Color.FromArgb(5, 150, 105);
+            }
+        }
+
+        // ===================== Actions =====================
         private void BtnSchedule_Click(object sender, EventArgs e)
         {
-            if (cmbPatient.SelectedValue == null || cmbDoctor.SelectedValue == null || cmbDepartment.SelectedValue == null)
+            // Patient: must be chosen from the list and still active.
+            if (selectedPatientId == 0)
             {
-                MessageBox.Show("Please select Patient, Department and Doctor.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("Please select a patient from the list on the left.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            int doctorId = Convert.ToInt32(cmbDoctor.SelectedValue);
-            DateTime when = dtpDate.Value;
+            var patient = HospitalData.GetPatient(selectedPatientId);
+            if (patient == null || !patient.IsActive)
+            {
+                MessageBox.Show("The selected patient is not active and cannot be scheduled. Please choose an active patient.",
+                    "Inactive Patient", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                ResetSelectedPatient();
+                LoadPatientList(patientSearchPlaceholderActive ? "" : txtPatientSearch.Text.Trim());
+                return;
+            }
 
-            // Simple double-booking check
+            if (cmbDepartment.SelectedValue == null || cmbDoctor.SelectedValue == null)
+            {
+                MessageBox.Show("Please select a Department and a Doctor.", "Validation",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Doctor: must still be active (guards against deactivation after the list loaded).
+            int doctorId = Convert.ToInt32(cmbDoctor.SelectedValue);
+            var doctor = HospitalData.GetDoctor(doctorId);
+            if (doctor == null || !doctor.IsActive)
+            {
+                MessageBox.Show("The selected doctor is no longer active. The doctor list has been refreshed; please pick an active doctor.",
+                    "Inactive Doctor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                LoadDoctors();
+                return;
+            }
+
+            DateTime when = dtpDate.Value;
             if (HospitalData.HasAppointmentClash(doctorId, when))
             {
-                MessageBox.Show("This doctor already has an appointment around that time.", "Conflict", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show("This doctor already has an appointment around that time.", "Conflict",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
             HospitalData.AddAppointment(new Appointment
             {
-                PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
+                PatientId = patient.Id,
                 DoctorId = doctorId,
                 DepartmentId = Convert.ToInt32(cmbDepartment.SelectedValue),
                 ScheduledOn = when,
@@ -378,6 +482,14 @@ namespace HospitalSystem.Views
             MessageBox.Show("Appointment scheduled (Pending).", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadAppointments();
             txtReason.Clear();
+            ResetSelectedPatient();
+        }
+
+        private void ResetSelectedPatient()
+        {
+            selectedPatientId = 0;
+            lblSelectedPatient.Text = "Selected patient:  (none — pick one from the list on the left)";
+            lblSelectedPatient.ForeColor = Color.FromArgb(185, 28, 28);
         }
 
         private Appointment GetSelectedAppointment()
