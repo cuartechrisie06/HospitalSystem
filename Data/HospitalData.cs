@@ -813,6 +813,9 @@ namespace HospitalSystem.Data
                 bed.IsOccupied = false;
 
             LogActivity("Admissions", "Discharged", $"Discharged patient: {PatientName(a.PatientId)} from {BedLabel(a.BedId)}", "🚪");
+
+            // Admission status change feeds billing: finalize room days on the linked bill.
+            SyncAdmissionBillOnDischarge(a);
         }
 
         public static void CancelAdmission(Admission a)
@@ -840,6 +843,9 @@ namespace HospitalSystem.Data
                 bed.IsOccupied = false;
 
             LogActivity("Admissions", "Cancelled", $"Cancelled admission {a.AdmissionNo} for {PatientName(a.PatientId)}", "❌");
+
+            // Admission status change feeds billing: void the auto bill for a mistaken admission.
+            CancelAdmissionBill(a);
         }
 
         public static List<Admission> ActiveAdmissions() => Admissions.Where(a => a.Status == "Active").ToList();
@@ -944,6 +950,91 @@ namespace HospitalSystem.Data
             Bills.Add(b);
             LogActivity("Billing", "Created", $"Bill {b.BillNo} created for {PatientName(b.PatientId)} ({b.TotalAmount:N2})", "🧾");
             return b;
+        }
+
+        // Admission -> billing trigger: guarantees every admission has an open bill with
+        // its room charges. Returns the existing open bill if one is already linked, so
+        // admitting never double-bills. Called by AdmissionsView right after AddAdmission.
+        public static Bill EnsureAdmissionBill(Admission admission)
+        {
+            if (admission == null) return null;
+
+            var existing = OpenBillForAdmission(admission.Id);
+            if (existing != null) return existing;
+
+            var items = DefaultChargesFor(admission, null);
+            return CreateBill(new Bill
+            {
+                PatientId = admission.PatientId,
+                AdmissionId = admission.Id,
+                Notes = "Auto-generated on admission"
+            }, items);
+        }
+
+        // On discharge, bring the auto room charge in line with the real length of stay
+        // (the bill was opened at admit with 1 day). Only touches an open, unpaid bill and
+        // never lets a billing hiccup break the discharge itself.
+        public static void SyncAdmissionBillOnDischarge(Admission admission)
+        {
+            if (admission == null) return;
+
+            var bill = OpenBillForAdmission(admission.Id);
+            if (bill == null || bill.AmountPaid > 0) return;
+
+            var roomItem = bill.Items.FirstOrDefault(i => i.Category == BillCategory.Room);
+            if (roomItem == null) return;
+
+            int days = admission.CalculateDaysStayed();
+            if (roomItem.Quantity == days) return;
+
+            roomItem.Quantity = days;
+            roomItem.CalculateAmount();
+            bill.CalculateTotal();
+            bill.CalculateBalance();
+            bill.UpdateStatus();
+
+            try
+            {
+                using (var conn = Db.OpenConnection())
+                using (var tx = conn.BeginTransaction())
+                {
+                    using (var cmd = new MySqlCommand(
+                        "UPDATE bill_items SET quantity=@q, amount=@a WHERE id=@id", conn, tx))
+                    {
+                        cmd.Parameters.AddWithValue("@q", roomItem.Quantity);
+                        cmd.Parameters.AddWithValue("@a", roomItem.Amount);
+                        cmd.Parameters.AddWithValue("@id", roomItem.Id);
+                        cmd.ExecuteNonQuery();
+                    }
+                    SaveBillTotals(bill, conn, tx);
+                    tx.Commit();
+                }
+                LogActivity("Billing", "Updated",
+                    $"Room charge on {bill.BillNo} updated to {days} day(s) at discharge", "🧾");
+            }
+            catch (MySqlException)
+            {
+                // Discharge already succeeded; the bill can still be adjusted in Billing.
+            }
+        }
+
+        // A mistaken admission that is cancelled should not leave an orphan bill behind.
+        // Only voids an open bill with no payments (CancelBill guards the rest).
+        public static void CancelAdmissionBill(Admission admission)
+        {
+            if (admission == null) return;
+
+            var bill = OpenBillForAdmission(admission.Id);
+            if (bill == null || bill.AmountPaid > 0) return;
+
+            try
+            {
+                CancelBill(bill);
+            }
+            catch (Exception)
+            {
+                // Cancellation of the admission already succeeded; ignore billing hiccups.
+            }
         }
 
         public static void AddBillItem(Bill b, BillItem item)

@@ -22,12 +22,14 @@ namespace HospitalSystem.Views
         private Label lblDiag;
         private Label lblAdm;
         private Label lblBeds;
+        private Label lblBedWarning;
 
         public AdmissionsView()
         {
             InitializeComponent();
             WireEvents();
             BuildExtraButtons();
+            BuildBedBoardExtras();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -59,6 +61,73 @@ namespace HospitalSystem.Views
             btnCancelAdmission.Size = new Size(130, 30);
             btnCancelAdmission.Click += BtnCancelAdmission_Click;
             formPanel.Controls.Add(btnCancelAdmission);
+        }
+
+        // Bed-board additions (occupancy warning + colour-coded status), built in code
+        // for the same reason as WireEvents()/BuildExtraButtons().
+        private void BuildBedBoardExtras()
+        {
+            lblBedWarning = new Label();
+            lblBedWarning.AutoSize = true;
+            lblBedWarning.MaximumSize = new Size(500, 0);
+            lblBedWarning.Location = new Point(150, 13);
+            lblBedWarning.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            lblBedWarning.ForeColor = Color.FromArgb(185, 28, 28);
+            lblBedWarning.Visible = false;
+            formPanel.Controls.Add(lblBedWarning);
+
+            gridBeds.CellFormatting += GridBeds_CellFormatting;
+        }
+
+        // Green for an available bed, red for an occupied one.
+        private void GridBeds_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
+        {
+            if (e.RowIndex < 0 || e.Value == null) return;
+            if (gridBeds.Columns[e.ColumnIndex].Name != "Status") return;
+
+            bool available = e.Value.ToString() == "Available";
+            e.CellStyle.ForeColor = available ? Color.FromArgb(5, 150, 105) : Color.FromArgb(220, 38, 38);
+            e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+        }
+
+        // Refreshes the ward-by-ward availability summary in the board header and the
+        // occupancy warning, and blocks admitting when no bed is free.
+        private void UpdateBedBoardStatus()
+        {
+            var beds = HospitalData.Beds;
+            int total = beds.Count;
+            int occupied = beds.Count(b => b.IsOccupied);
+            int available = total - occupied;
+
+            var wardParts = beds
+                .GroupBy(b => b.Ward)
+                .OrderBy(g => g.Key)
+                .Select(g => $"{g.Key} {g.Count(b => !b.IsOccupied)}/{g.Count()}");
+            lblBeds.Text = "Bed Status Board    —    " + string.Join("    •    ", wardParts) + "    (available/total)";
+
+            double rate = total == 0 ? 0 : (double)occupied / total * 100;
+
+            if (available == 0)
+            {
+                lblBedWarning.Text = "⚠ No beds available — cannot admit until a bed is discharged or freed.";
+                lblBedWarning.ForeColor = Color.FromArgb(185, 28, 28);
+                lblBedWarning.Visible = true;
+                btnAdmit.Enabled = false;
+            }
+            else
+            {
+                btnAdmit.Enabled = true;
+                if (rate >= 80)
+                {
+                    lblBedWarning.Text = $"⚠ High bed occupancy ({rate:0}%). Only {available} bed(s) remaining.";
+                    lblBedWarning.ForeColor = Color.FromArgb(217, 119, 6);
+                    lblBedWarning.Visible = true;
+                }
+                else
+                {
+                    lblBedWarning.Visible = false;
+                }
+            }
         }
 
         private void InitializeComponent()
@@ -330,10 +399,20 @@ namespace HospitalSystem.Views
 
             if (gridBeds.Columns["Id"] != null)
                 gridBeds.Columns["Id"].Visible = false;
+
+            UpdateBedBoardStatus();
         }
 
         private void BtnAdmit_Click(object sender, EventArgs e)
         {
+            // No bed to assign - alert and stop (also covered by the disabled button).
+            if (HospitalData.AvailableBeds().Count == 0)
+            {
+                MessageBox.Show("No beds are currently available. Discharge or free a bed before admitting a new patient.",
+                    "No Beds Available", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
             if (cmbPatient.SelectedValue == null || cmbDoctor.SelectedValue == null || cmbBed.SelectedValue == null)
             {
                 MessageBox.Show("Please select Patient, Doctor and an available Bed.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -346,7 +425,7 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            HospitalData.AddAdmission(new Admission
+            var admission = HospitalData.AddAdmission(new Admission
             {
                 PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
                 DoctorId = Convert.ToInt32(cmbDoctor.SelectedValue),
@@ -354,7 +433,24 @@ namespace HospitalSystem.Views
                 Diagnosis = txtDiagnosis.Text.Trim()
             });
 
-            MessageBox.Show("Patient admitted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            // Admit -> billing trigger: every admission opens a bill with its room charge.
+            string billMsg;
+            try
+            {
+                var bill = HospitalData.EnsureAdmissionBill(admission);
+                billMsg = bill != null
+                    ? $"\n\nBill {bill.BillNo} was created automatically (room charge total: {bill.TotalAmount:N2}). " +
+                      "Open Billing to add items or record payment."
+                    : "";
+            }
+            catch (MySql.Data.MySqlClient.MySqlException ex)
+            {
+                // The admission itself succeeded; surface the billing problem without losing it.
+                billMsg = "\n\nNote: the automatic bill could not be created (" + ex.Message +
+                          "). You can still create it manually in Billing.";
+            }
+
+            MessageBox.Show("Patient admitted successfully." + billMsg, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             txtDiagnosis.Clear();
             LoadCombos();
             LoadAdmissions();
