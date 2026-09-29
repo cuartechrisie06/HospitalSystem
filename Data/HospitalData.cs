@@ -125,16 +125,20 @@ namespace HospitalSystem.Data
         private static List<Patient> LoadPatients(MySqlConnection conn)
         {
             var list = new List<Patient>();
-            using (var cmd = new MySqlCommand("SELECT id, full_name, age, gender, contact, address, blood_type, status, registered_on FROM patients", conn))
+            using (var cmd = new MySqlCommand(
+                "SELECT id, full_name, age, gender, contact, address, blood_type, status, registered_on FROM patients", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
                 {
+                    int age = r.GetInt32("age");
+
                     list.Add(new Patient
                     {
                         Id = r.GetInt32("id"),
                         FullName = r.GetString("full_name"),
-                        Age = r.GetInt32("age"),
+                        // Gi-convert ang Age → approximate Birthdate
+                        Birthdate = DateTime.Today.AddYears(-age),
                         Gender = r.IsDBNull(r.GetOrdinal("gender")) ? null : r.GetString("gender"),
                         Contact = r.IsDBNull(r.GetOrdinal("contact")) ? null : r.GetString("contact"),
                         Address = r.IsDBNull(r.GetOrdinal("address")) ? null : r.GetString("address"),
@@ -558,9 +562,17 @@ namespace HospitalSystem.Data
 
             LogActivity("Patients", "Updated", $"Updated patient record: {p.FullName} ({p.PatientNo})", "👤");
         }
+        public static int GetNextPatientId()
+        {
+            using (var conn = Db.OpenConnection())
+            {
+                using (var cmd = new MySqlCommand("SELECT IFNULL(MAX(id), 0) + 1 FROM patients", conn))
+                {
+                    return Convert.ToInt32(cmd.ExecuteScalar());
+                }
+            }
+        }
 
-        // Soft-delete only: patients are referenced by appointments/admissions (FK),
-        // and a hospital record should stay auditable rather than disappear.
         public static void DeletePatient(Patient p)
         {
             p.Status = "Inactive";

@@ -1,10 +1,11 @@
+using HospitalSystem.Data;
+using HospitalSystem.Models;
+using Org.BouncyCastle.Utilities.Zlib;
 using System;
 using System.Drawing;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
-using HospitalSystem.Data;
-using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
 {
@@ -208,7 +209,12 @@ namespace HospitalSystem.Views
                 HeaderText = "Patient No.",
                 DataPropertyName = "No",
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 100
+                Width = 110,
+                DefaultCellStyle = new DataGridViewCellStyle
+                {
+                    Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(30, 58, 138)
+                }
             });
             grid.Columns.Add(new DataGridViewTextBoxColumn
             {
@@ -359,15 +365,6 @@ namespace HospitalSystem.Views
                     p.Status
                 }).ToList();
 
-            // Rebinding a DataGridView straight to a fresh List<> (rather than a
-            // BindingList/BindingSource) can leave the grid showing a stale subset
-            // of rows after several rebinds - confirmed via live UI Automation that
-            // Rows itself is always fully correct; the visible viewport anchor
-            // (FirstDisplayedScrollingRowIndex) doesn't reset on its own when a
-            // filtered (smaller) result set is replaced by a larger one, so the
-            // grid can keep painting from a stale scroll offset left over from the
-            // previous, smaller bind. Fully clearing the old binding, resetting the
-            // scroll anchor, then forcing a repaint avoids it.
             grid.DataSource = null;
             grid.DataSource = rows;
             if (grid.Rows.Count > 0)
@@ -383,9 +380,6 @@ namespace HospitalSystem.Views
             lblCount.Text = $"Showing {rows.Count} of {active.Count} {noun}";
         }
 
-        // ===================== Row / action routing =====================
-        // Exactly one patient-related interface is open at a time:
-        // clicking a row opens Details; Edit/Delete act directly from the list.
         private void Grid_CellClick(object sender, DataGridViewCellEventArgs e)
         {
             if (e.RowIndex < 0) return;
@@ -596,18 +590,17 @@ namespace HospitalSystem.Views
         private class PatientFormDialog : Form
         {
             private readonly int selectedId;
-            private TextBox txtName, txtAge, txtContact, txtAddress;
+            private TextBox txtName, txtContact, txtAddress;
+            private DateTimePicker dtpBirthdate;
             private ComboBox cmbGender, cmbBlood;
             private Button btnSave, btnCancel;
-
             public bool Saved { get; private set; } = false;
 
             public PatientFormDialog(Patient existing)
             {
                 selectedId = existing?.Id ?? 0;
-
                 this.Text = existing == null ? "Add New Patient" : "Update Patient";
-                this.Size = new Size(420, 500);
+                this.Size = new Size(420, 540);
                 this.StartPosition = FormStartPosition.CenterParent;
                 this.FormBorderStyle = FormBorderStyle.FixedDialog;
                 this.MaximizeBox = false;
@@ -624,44 +617,74 @@ namespace HospitalSystem.Views
                 };
                 this.Controls.Add(lblTitle);
 
-                int y = 58;
+                // Show next Patient No. when adding new
+                if (existing == null)
+                {
+                    int nextId = HospitalData.GetNextPatientId();
+                    Label lblNextNo = new Label
+                    {
+                        Text = "Next Patient No.:  P-" + nextId.ToString("D4"),
+                        Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                        ForeColor = Color.FromArgb(37, 99, 235),
+                        Location = new Point(25, 48),
+                        AutoSize = true
+                    };
+                    this.Controls.Add(lblNextNo);
+                }
+
+                int y = existing == null ? 78 : 58;
+
+                // Full Name
                 AddLabel("Full Name *", 25, y);
-                txtName = AddTextBox(25, y + 22, 330);
+                txtName = AddTextBox(25, y + 22, 350);
                 y += 65;
 
-                AddLabel("Age *", 25, y);
-                txtAge = AddTextBox(25, y + 22, 100);
+                // Birthdate
+                AddLabel("Birthdate *", 25, y);
+                dtpBirthdate = new DateTimePicker();
+                dtpBirthdate.Location = new Point(25, y + 22);
+                dtpBirthdate.Size = new Size(150, 28);
+                dtpBirthdate.Font = new Font("Segoe UI", 10F);
+                dtpBirthdate.Format = DateTimePickerFormat.Short;
+                dtpBirthdate.MaxDate = DateTime.Today;
+                dtpBirthdate.Value = DateTime.Today.AddYears(-25);
+                this.Controls.Add(dtpBirthdate);
 
-                AddLabel("Gender *", 150, y);
+                // Gender - Male / Female only
+                AddLabel("Gender *", 200, y);
                 cmbGender = new ComboBox();
-                cmbGender.Location = new Point(150, y + 22);
-                cmbGender.Size = new Size(205, 28);
+                cmbGender.Location = new Point(200, y + 22);
+                cmbGender.Size = new Size(175, 28);
                 cmbGender.DropDownStyle = ComboBoxStyle.DropDownList;
                 cmbGender.Font = new Font("Segoe UI", 10F);
-                cmbGender.Items.AddRange(new object[] { "Male", "Female", "Other" });
+                cmbGender.Items.AddRange(new object[] { "Male", "Female" });
                 this.Controls.Add(cmbGender);
                 y += 65;
 
+                // Contact
                 AddLabel("Contact *", 25, y);
-                txtContact = AddTextBox(25, y + 22, 330);
+                txtContact = AddTextBox(25, y + 22, 350);
                 txtContact.MaxLength = 13;
                 AddHint("e.g. 09171234567", 25, y + 52);
                 y += 78;
 
+                // Address
                 AddLabel("Address", 25, y);
-                txtAddress = AddTextBox(25, y + 22, 330);
+                txtAddress = AddTextBox(25, y + 22, 350);
                 y += 65;
 
+                // Blood Type
                 AddLabel("Blood Type", 25, y);
                 cmbBlood = new ComboBox();
                 cmbBlood.Location = new Point(25, y + 22);
-                cmbBlood.Size = new Size(130, 28);
+                cmbBlood.Size = new Size(150, 28);
                 cmbBlood.DropDownStyle = ComboBoxStyle.DropDownList;
                 cmbBlood.Font = new Font("Segoe UI", 10F);
                 cmbBlood.Items.AddRange(new object[] { "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-" });
                 this.Controls.Add(cmbBlood);
                 y += 80;
 
+                // Buttons
                 btnSave = new Button();
                 btnSave.Text = existing == null ? "Save Patient" : "Save Changes";
                 btnSave.Location = new Point(25, y);
@@ -688,10 +711,29 @@ namespace HospitalSystem.Views
                 btnCancel.Click += (s, e) => this.Close();
                 this.Controls.Add(btnCancel);
 
+                // Deactivate button – only when editing existing patient
+                if (existing != null)
+                {
+                    Button btnDeactivate = new Button();
+                    btnDeactivate.Text = "Deactivate";
+                    btnDeactivate.Location = new Point(305, y);
+                    btnDeactivate.Size = new Size(110, 40);
+                    btnDeactivate.BackColor = Color.FromArgb(220, 38, 38);
+                    btnDeactivate.ForeColor = Color.White;
+                    btnDeactivate.FlatStyle = FlatStyle.Flat;
+                    btnDeactivate.FlatAppearance.BorderSize = 0;
+                    btnDeactivate.Font = new Font("Segoe UI", 10F);
+                    btnDeactivate.Cursor = Cursors.Hand;
+                    btnDeactivate.Click += BtnDeactivate_Click;
+                    this.Controls.Add(btnDeactivate);
+                }
+
+                // Load existing data
                 if (existing != null)
                 {
                     txtName.Text = existing.FullName;
-                    txtAge.Text = existing.Age.ToString();
+                    if (existing.Birthdate.HasValue)
+                        dtpBirthdate.Value = existing.Birthdate.Value;
                     txtContact.Text = existing.Contact ?? "";
                     txtAddress.Text = existing.Address ?? "";
                     cmbGender.SelectedItem = existing.Gender;
@@ -746,16 +788,16 @@ namespace HospitalSystem.Views
                     return false;
                 }
 
-                if (!int.TryParse(txtAge.Text.Trim(), out int age) || age <= 0 || age > 120)
+                if (dtpBirthdate.Value.Date > DateTime.Today)
                 {
-                    error = "Please enter a valid age (1-120).";
-                    focusTarget = txtAge;
+                    error = "Birthdate cannot be in the future.";
+                    focusTarget = dtpBirthdate;
                     return false;
                 }
 
                 if (cmbGender.SelectedIndex == -1)
                 {
-                    error = "Please select a gender.";
+                    error = "Please select Gender (Male or Female).";
                     focusTarget = cmbGender;
                     return false;
                 }
@@ -785,9 +827,6 @@ namespace HospitalSystem.Views
                     focusTarget?.Focus();
                     return;
                 }
-
-                int age = int.Parse(txtAge.Text.Trim());
-
                 try
                 {
                     if (selectedId == 0)
@@ -795,7 +834,7 @@ namespace HospitalSystem.Views
                         var created = HospitalData.AddPatient(new Patient
                         {
                             FullName = txtName.Text.Trim(),
-                            Age = age,
+                            Birthdate = dtpBirthdate.Value.Date,
                             Gender = cmbGender.SelectedItem.ToString(),
                             Contact = txtContact.Text.Trim(),
                             Address = txtAddress.Text.Trim(),
@@ -810,7 +849,7 @@ namespace HospitalSystem.Views
                         if (p != null)
                         {
                             p.FullName = txtName.Text.Trim();
-                            p.Age = age;
+                            p.Birthdate = dtpBirthdate.Value.Date;
                             p.Gender = cmbGender.SelectedItem.ToString();
                             p.Contact = txtContact.Text.Trim();
                             p.Address = txtAddress.Text.Trim();
@@ -826,6 +865,38 @@ namespace HospitalSystem.Views
                         "Database Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     return;
                 }
+                Saved = true;
+                this.Close();
+            }
+
+            private void BtnDeactivate_Click(object sender, EventArgs e)
+            {
+                var p = HospitalData.GetPatient(selectedId);
+                if (p == null) return;
+
+                if (HospitalData.HasActiveAdmission(selectedId))
+                {
+                    MessageBox.Show(
+                        "This patient currently has an active admission and must be discharged before they can be deactivated.",
+                        "Cannot Deactivate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                int apptCount = HospitalData.AppointmentCountForPatient(selectedId);
+                int admCount = HospitalData.AdmissionCountForPatient(selectedId);
+
+                string message = "Are you sure you want to deactivate this patient?";
+                if (apptCount > 0 || admCount > 0)
+                {
+                    message += $"\n\nThis patient has {apptCount} appointment(s) and {admCount} admission(s) on record. " +
+                               "The patient will be deactivated (not permanently deleted).";
+                }
+
+                if (MessageBox.Show(message, "Confirm Deactivate", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+
+                HospitalData.DeletePatient(p);
+                MessageBox.Show("Patient deactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 Saved = true;
                 this.Close();
@@ -833,3 +904,4 @@ namespace HospitalSystem.Views
         }
     }
 }
+
