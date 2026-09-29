@@ -34,6 +34,7 @@ namespace HospitalSystem.Data
             {
                 Users = LoadUsers(conn);
                 Departments = LoadDepartments(conn);
+                EnsureDoctorColumns(conn);
                 Doctors = LoadDoctors(conn);
                 Beds = LoadBeds(conn);
                 Patients = LoadPatients(conn);
@@ -78,10 +79,43 @@ namespace HospitalSystem.Data
             return list;
         }
 
+        // Keep in sync with Data/schema.sql. Adding the columns here means a database
+        // imported before the doctor record fields existed picks them up without a
+        // re-import. Works on both MySQL and MariaDB (no "ADD COLUMN IF NOT EXISTS").
+        private static void EnsureDoctorColumns(MySqlConnection conn)
+        {
+            var columns = new[]
+            {
+                new { Name = "license_number", Ddl = "ALTER TABLE doctors ADD COLUMN license_number VARCHAR(50)" },
+                new { Name = "credentials", Ddl = "ALTER TABLE doctors ADD COLUMN credentials VARCHAR(255)" },
+                new { Name = "deactivation_reason", Ddl = "ALTER TABLE doctors ADD COLUMN deactivation_reason VARCHAR(255)" }
+            };
+
+            foreach (var col in columns)
+            {
+                bool exists;
+                using (var cmd = new MySqlCommand(
+                    "SELECT COUNT(*) FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'doctors' AND column_name = @col", conn))
+                {
+                    cmd.Parameters.AddWithValue("@col", col.Name);
+                    exists = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                }
+
+                if (!exists)
+                {
+                    using (var cmd = new MySqlCommand(col.Ddl, conn))
+                        cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
         private static List<Doctor> LoadDoctors(MySqlConnection conn)
         {
             var list = new List<Doctor>();
-            using (var cmd = new MySqlCommand("SELECT id, full_name, department_id, specialization, contact, is_on_duty, status FROM doctors", conn))
+            using (var cmd = new MySqlCommand(
+                "SELECT id, full_name, department_id, specialization, contact, license_number, credentials, " +
+                "is_on_duty, status, deactivation_reason FROM doctors", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
@@ -93,8 +127,11 @@ namespace HospitalSystem.Data
                         DepartmentId = r.GetInt32("department_id"),
                         Specialization = r.IsDBNull(r.GetOrdinal("specialization")) ? null : r.GetString("specialization"),
                         Contact = r.IsDBNull(r.GetOrdinal("contact")) ? null : r.GetString("contact"),
+                        LicenseNumber = r.IsDBNull(r.GetOrdinal("license_number")) ? null : r.GetString("license_number"),
+                        Credentials = r.IsDBNull(r.GetOrdinal("credentials")) ? null : r.GetString("credentials"),
                         IsOnDuty = r.GetBoolean("is_on_duty"),
-                        Status = r.GetString("status")
+                        Status = r.GetString("status"),
+                        DeactivationReason = r.IsDBNull(r.GetOrdinal("deactivation_reason")) ? null : r.GetString("deactivation_reason")
                     });
                 }
             }
@@ -1039,20 +1076,24 @@ namespace HospitalSystem.Data
 
         public static List<Doctor> ActiveDoctors() => Doctors.Where(d => d.IsActive).ToList();
 
+        public static List<Doctor> AllDoctors() => Doctors.ToList();
+
         public static Doctor AddDoctor(Doctor d)
         {
             d.Status = "Active";
 
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand(
-                "INSERT INTO doctors (full_name, department_id, specialization, contact, is_on_duty, status) " +
-                "VALUES (@fullName, @departmentId, @specialization, @contact, @isOnDuty, @status); " +
+                "INSERT INTO doctors (full_name, department_id, specialization, contact, license_number, credentials, is_on_duty, status) " +
+                "VALUES (@fullName, @departmentId, @specialization, @contact, @licenseNumber, @credentials, @isOnDuty, @status); " +
                 "SELECT LAST_INSERT_ID();", conn))
             {
                 cmd.Parameters.AddWithValue("@fullName", d.FullName);
                 cmd.Parameters.AddWithValue("@departmentId", d.DepartmentId);
                 cmd.Parameters.AddWithValue("@specialization", (object)d.Specialization ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@contact", (object)d.Contact ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@licenseNumber", (object)d.LicenseNumber ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@credentials", (object)d.Credentials ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@isOnDuty", d.IsOnDuty);
                 cmd.Parameters.AddWithValue("@status", d.Status);
                 d.Id = Convert.ToInt32(cmd.ExecuteScalar());
@@ -1068,12 +1109,14 @@ namespace HospitalSystem.Data
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand(
                 "UPDATE doctors SET full_name=@fullName, department_id=@departmentId, specialization=@specialization, " +
-                "contact=@contact, is_on_duty=@isOnDuty WHERE id=@id", conn))
+                "contact=@contact, license_number=@licenseNumber, credentials=@credentials, is_on_duty=@isOnDuty WHERE id=@id", conn))
             {
                 cmd.Parameters.AddWithValue("@fullName", d.FullName);
                 cmd.Parameters.AddWithValue("@departmentId", d.DepartmentId);
                 cmd.Parameters.AddWithValue("@specialization", (object)d.Specialization ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@contact", (object)d.Contact ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@licenseNumber", (object)d.LicenseNumber ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@credentials", (object)d.Credentials ?? DBNull.Value);
                 cmd.Parameters.AddWithValue("@isOnDuty", d.IsOnDuty);
                 cmd.Parameters.AddWithValue("@id", d.Id);
                 cmd.ExecuteNonQuery();
@@ -1083,19 +1126,42 @@ namespace HospitalSystem.Data
         }
 
         // Soft-delete only: doctors are referenced by appointments/admissions (FK),
-        // and losing a doctor's record should never erase that history.
-        public static void DeleteDoctor(Doctor d)
+        // and losing a doctor's record should never erase that history. Deactivating
+        // takes the doctor off duty and records why; the reason is kept while inactive.
+        public static void DeactivateDoctor(Doctor d, string reason)
         {
             d.Status = "Inactive";
+            d.DeactivationReason = reason;
+            d.IsOnDuty = false;
+
             using (var conn = Db.OpenConnection())
-            using (var cmd = new MySqlCommand("UPDATE doctors SET status=@status WHERE id=@id", conn))
+            using (var cmd = new MySqlCommand(
+                "UPDATE doctors SET status=@status, deactivation_reason=@reason, is_on_duty=0 WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@status", d.Status);
+                cmd.Parameters.AddWithValue("@reason", (object)d.DeactivationReason ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@id", d.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity("Doctors", "Deactivated", $"Deactivated doctor: Dr. {d.FullName} - {reason}", "🩺");
+        }
+
+        public static void ActivateDoctor(Doctor d)
+        {
+            d.Status = "Active";
+            d.DeactivationReason = null;
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "UPDATE doctors SET status=@status, deactivation_reason=NULL WHERE id=@id", conn))
             {
                 cmd.Parameters.AddWithValue("@status", d.Status);
                 cmd.Parameters.AddWithValue("@id", d.Id);
                 cmd.ExecuteNonQuery();
             }
 
-            LogActivity("Doctors", "Deactivated", $"Deactivated doctor: Dr. {d.FullName}", "🩺");
+            LogActivity("Doctors", "Reactivated", $"Reactivated doctor: Dr. {d.FullName}", "🩺");
         }
 
         public static int AppointmentCountForDoctor(int doctorId) =>

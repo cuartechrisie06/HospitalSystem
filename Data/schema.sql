@@ -22,8 +22,11 @@ CREATE TABLE IF NOT EXISTS doctors (
     department_id   INT,
     specialization  VARCHAR(150),
     contact         VARCHAR(50),
+    license_number  VARCHAR(50),
+    credentials     VARCHAR(255),
     is_on_duty      TINYINT(1) NOT NULL DEFAULT 0,
     status          VARCHAR(20) NOT NULL DEFAULT 'Active',
+    deactivation_reason VARCHAR(255),
     FOREIGN KEY (department_id) REFERENCES departments(id)
 );
 

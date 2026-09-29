@@ -7,7 +7,7 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 - **Login** with accounts stored in the database
 - **Dashboard** with live statistics pulled from MySQL
 - **Patients** – Register, search, update
-- **Doctors** – Doctor list and duty status
+- **Doctors** – Doctor records (license number, credentials, specialization, contact) and duty status, with search; deactivate a doctor with a required reason (kept on the record) and reactivate later. "Show inactive" reveals deactivated doctors; inactive doctors are hidden from appointment/admission scheduling.
 - **Appointments** – Schedule, confirm, reschedule, mark completed, cancel (with basic double-booking protection)
 - **Admissions** – Admit patient, assign bed, discharge, cancel (for mistaken entries), live bed board
 - **Billing** – Bills per patient (optionally linked to an admission or appointment), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid / Cancelled)

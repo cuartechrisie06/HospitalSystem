@@ -17,6 +17,7 @@ namespace HospitalSystem.Views
         private DataGridView grid;
         private TextBox txtSearch;
         private Button btnSearch, btnClear, btnNew;
+        private CheckBox chkShowInactive;
         private Label lblCount;
         private bool searchPlaceholderActive = true;
 
@@ -46,6 +47,7 @@ namespace HospitalSystem.Views
             btnSearch.Click += BtnSearch_Click;
             btnClear.Click += BtnClear_Click;
             btnNew.Click += BtnNewDoctor_Click;
+            chkShowInactive.CheckedChanged += (s, e) => LoadDoctors(GetSearchText());
             txtSearch.KeyDown += TxtSearch_KeyDown;
             grid.CellClick += Grid_CellClick;
             grid.CellFormatting += Grid_CellFormatting;
@@ -117,6 +119,15 @@ namespace HospitalSystem.Views
             btnNew.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
             btnNew.Cursor = Cursors.Hand;
             header.Controls.Add(btnNew);
+
+            chkShowInactive = new CheckBox();
+            chkShowInactive.Text = "Show inactive";
+            chkShowInactive.Location = new Point(700, 41);
+            chkShowInactive.AutoSize = true;
+            chkShowInactive.Font = new Font("Segoe UI", 9F);
+            chkShowInactive.ForeColor = Color.FromArgb(75, 85, 99);
+            chkShowInactive.Cursor = Cursors.Hand;
+            header.Controls.Add(chkShowInactive);
 
             lblCount = new Label();
             lblCount.Location = new Point(0, 72);
@@ -211,25 +222,42 @@ namespace HospitalSystem.Views
                 Width = 80,
                 FlatStyle = FlatStyle.Flat
             });
+            // Per-row action: text is set in CellFormatting to "Deactivate" for active
+            // doctors and "Activate" for inactive ones (UseColumnTextForButtonValue off).
             grid.Columns.Add(new DataGridViewButtonColumn
             {
-                Name = "colDelete",
+                Name = "colAction",
                 HeaderText = "",
-                Text = "Delete",
-                UseColumnTextForButtonValue = true,
+                UseColumnTextForButtonValue = false,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 85,
+                Width = 100,
                 FlatStyle = FlatStyle.Flat
             });
         }
 
         private void Grid_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
-            if (grid.Columns[e.ColumnIndex].Name != "colStatus" || e.Value == null) return;
-            e.CellStyle.ForeColor = e.Value.ToString() == "Active"
-                ? Color.FromArgb(5, 150, 105)
-                : Color.FromArgb(156, 163, 175);
-            e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            if (e.RowIndex < 0) return;
+            string colName = grid.Columns[e.ColumnIndex].Name;
+
+            if (colName == "colStatus" && e.Value != null)
+            {
+                e.CellStyle.ForeColor = e.Value.ToString() == "Active"
+                    ? Color.FromArgb(5, 150, 105)
+                    : Color.FromArgb(156, 163, 175);
+                e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+                return;
+            }
+
+            // Action button label depends on the row's status: active doctors can be
+            // deactivated, inactive ones reactivated.
+            if (colName == "colAction")
+            {
+                var statusObj = grid.Rows[e.RowIndex].Cells["colStatus"].Value;
+                bool isActive = statusObj != null && statusObj.ToString() == "Active";
+                e.Value = isActive ? "Deactivate" : "Activate";
+                e.FormattingApplied = true;
+            }
         }
 
         // ===================== Search box placeholder =====================
@@ -276,8 +304,9 @@ namespace HospitalSystem.Views
         // ===================== List loading =====================
         private void LoadDoctors(string filter)
         {
-            var active = HospitalData.ActiveDoctors();
-            var source = active.AsEnumerable();
+            bool showInactive = chkShowInactive != null && chkShowInactive.Checked;
+            var visible = showInactive ? HospitalData.AllDoctors() : HospitalData.ActiveDoctors();
+            var source = visible.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(filter))
             {
                 string f = filter.ToLower();
@@ -322,7 +351,7 @@ namespace HospitalSystem.Views
                 grid.CurrentCell = null;
 
             string noun = rows.Count == 1 ? "doctor" : "doctors";
-            lblCount.Text = $"Showing {rows.Count} of {active.Count} {noun}";
+            lblCount.Text = $"Showing {rows.Count} of {visible.Count} {noun}";
         }
 
         // ===================== Row / action routing =====================
@@ -340,8 +369,13 @@ namespace HospitalSystem.Views
                 case "colEdit":
                     OpenEditForm(id);
                     break;
-                case "colDelete":
-                    DeleteDoctorFlow(id);
+                case "colAction":
+                    var doc = HospitalData.GetDoctor(id);
+                    if (doc == null) return;
+                    if (doc.IsActive)
+                        DeactivateDoctorFlow(id);
+                    else
+                        ActivateDoctorFlow(id);
                     break;
                 default:
                     ShowDetails(id);
@@ -378,36 +412,201 @@ namespace HospitalSystem.Views
             }
         }
 
-        private void DeleteDoctorFlow(int id)
+        private void DeactivateDoctorFlow(int id)
         {
             var d = HospitalData.GetDoctor(id);
             if (d == null) return;
 
-            if (HospitalData.UpcomingAppointmentCountForDoctor(id) > 0)
+            int upcoming = HospitalData.UpcomingAppointmentCountForDoctor(id);
+
+            using (var dlg = new DeactivateDoctorDialog(d, upcoming))
             {
-                MessageBox.Show(
-                    "This doctor has upcoming appointment(s) scheduled and cannot be deleted until those are completed or cancelled.",
-                    "Cannot Delete", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
+                if (dlg.ShowDialog(this) != DialogResult.OK)
+                    return;
+
+                HospitalData.DeactivateDoctor(d, dlg.Reason);
             }
 
-            int apptCount = HospitalData.AppointmentCountForDoctor(id);
-            int admCount = HospitalData.AdmissionCountForDoctor(id);
-
-            string message = "Are you sure you want to delete this doctor?";
-            if (apptCount > 0 || admCount > 0)
-            {
-                message += $"\n\nThis doctor has {apptCount} appointment(s) and {admCount} admission(s) on record. " +
-                           "To preserve that history, the doctor will be deactivated instead of permanently deleted.";
-            }
-
-            if (MessageBox.Show(message, "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
-                return;
-
-            HospitalData.DeleteDoctor(d);
-            MessageBox.Show("Doctor deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
-
+            MessageBox.Show("Doctor deactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadDoctors(GetSearchText());
+        }
+
+        private void ActivateDoctorFlow(int id)
+        {
+            var d = HospitalData.GetDoctor(id);
+            if (d == null) return;
+
+            if (MessageBox.Show($"Reactivate Dr. {d.FullName}? They will be selectable for appointments and admissions again.",
+                "Confirm Reactivate", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            HospitalData.ActivateDoctor(d);
+            MessageBox.Show("Doctor reactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            LoadDoctors(GetSearchText());
+        }
+
+        // ===================== Deactivate Doctor dialog (modal) =====================
+        // A reason is mandatory. Picking "Other" requires the free-text box to be filled.
+        private class DeactivateDoctorDialog : Form
+        {
+            private const string OtherOption = "Other";
+            private static readonly string[] Reasons =
+            {
+                "Transferred",
+                "No longer affiliated",
+                "Retired",
+                "On extended leave",
+                OtherOption
+            };
+
+            private ComboBox cmbReason;
+            private TextBox txtOther;
+            private Label lblOther;
+
+            public string Reason { get; private set; }
+
+            public DeactivateDoctorDialog(Doctor d, int upcomingAppointments)
+            {
+                this.Text = "Deactivate Doctor";
+                this.Size = new Size(430, 300);
+                this.StartPosition = FormStartPosition.CenterParent;
+                this.FormBorderStyle = FormBorderStyle.FixedDialog;
+                this.MaximizeBox = false;
+                this.MinimizeBox = false;
+                this.BackColor = Color.White;
+
+                Label lblTitle = new Label
+                {
+                    Text = "Deactivate Dr. " + d.FullName,
+                    Font = new Font("Segoe UI", 12F, FontStyle.Bold),
+                    ForeColor = Color.FromArgb(30, 41, 59),
+                    Location = new Point(20, 18),
+                    AutoSize = true
+                };
+                this.Controls.Add(lblTitle);
+
+                int y = 52;
+
+                if (upcomingAppointments > 0)
+                {
+                    Label lblWarn = new Label
+                    {
+                        Text = $"⚠ This doctor has {upcomingAppointments} upcoming appointment(s). " +
+                               "Please reassign or cancel them; deactivating takes the doctor off duty.",
+                        Font = new Font("Segoe UI", 8.5F),
+                        ForeColor = Color.FromArgb(180, 83, 9),
+                        Location = new Point(20, y),
+                        Size = new Size(385, 40)
+                    };
+                    this.Controls.Add(lblWarn);
+                    y += 46;
+                }
+
+                Label lblReason = new Label
+                {
+                    Text = "Reason *",
+                    Font = new Font("Segoe UI", 9F),
+                    ForeColor = Color.FromArgb(75, 85, 99),
+                    Location = new Point(20, y),
+                    AutoSize = true
+                };
+                this.Controls.Add(lblReason);
+
+                cmbReason = new ComboBox();
+                cmbReason.Location = new Point(20, y + 22);
+                cmbReason.Size = new Size(385, 28);
+                cmbReason.DropDownStyle = ComboBoxStyle.DropDownList;
+                cmbReason.Font = new Font("Segoe UI", 10F);
+                cmbReason.Items.AddRange(Reasons);
+                cmbReason.SelectedIndex = -1;
+                cmbReason.SelectedIndexChanged += (s, e) =>
+                {
+                    bool other = OtherOption.Equals(cmbReason.SelectedItem);
+                    lblOther.Visible = other;
+                    txtOther.Visible = other;
+                    if (other) txtOther.Focus();
+                };
+                this.Controls.Add(cmbReason);
+                y += 58;
+
+                lblOther = new Label
+                {
+                    Text = "Please specify *",
+                    Font = new Font("Segoe UI", 9F),
+                    ForeColor = Color.FromArgb(75, 85, 99),
+                    Location = new Point(20, y),
+                    AutoSize = true,
+                    Visible = false
+                };
+                this.Controls.Add(lblOther);
+
+                txtOther = new TextBox();
+                txtOther.Location = new Point(20, y + 22);
+                txtOther.Size = new Size(385, 28);
+                txtOther.Font = new Font("Segoe UI", 10F);
+                txtOther.Visible = false;
+                this.Controls.Add(txtOther);
+
+                Button btnConfirm = new Button();
+                btnConfirm.Text = "Deactivate";
+                btnConfirm.Size = new Size(130, 38);
+                btnConfirm.Location = new Point(150, 215);
+                btnConfirm.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+                btnConfirm.BackColor = Color.FromArgb(220, 38, 38);
+                btnConfirm.ForeColor = Color.White;
+                btnConfirm.FlatStyle = FlatStyle.Flat;
+                btnConfirm.FlatAppearance.BorderSize = 0;
+                btnConfirm.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+                btnConfirm.Cursor = Cursors.Hand;
+                btnConfirm.Click += BtnConfirm_Click;
+                this.Controls.Add(btnConfirm);
+
+                Button btnCancel = new Button();
+                btnCancel.Text = "Cancel";
+                btnCancel.Size = new Size(100, 38);
+                btnCancel.Location = new Point(290, 215);
+                btnCancel.Anchor = AnchorStyles.Bottom | AnchorStyles.Right;
+                btnCancel.BackColor = Color.FromArgb(229, 231, 235);
+                btnCancel.ForeColor = Color.FromArgb(55, 65, 81);
+                btnCancel.FlatStyle = FlatStyle.Flat;
+                btnCancel.FlatAppearance.BorderSize = 0;
+                btnCancel.Cursor = Cursors.Hand;
+                btnCancel.DialogResult = DialogResult.Cancel;
+                this.Controls.Add(btnCancel);
+
+                this.CancelButton = btnCancel;
+            }
+
+            private void BtnConfirm_Click(object sender, EventArgs e)
+            {
+                if (cmbReason.SelectedItem == null)
+                {
+                    MessageBox.Show("Please choose a reason for deactivation.", "Validation",
+                        MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    cmbReason.Focus();
+                    return;
+                }
+
+                string selected = cmbReason.SelectedItem.ToString();
+                if (OtherOption.Equals(selected))
+                {
+                    if (string.IsNullOrWhiteSpace(txtOther.Text))
+                    {
+                        MessageBox.Show("Please specify the reason.", "Validation",
+                            MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        txtOther.Focus();
+                        return;
+                    }
+                    Reason = txtOther.Text.Trim();
+                }
+                else
+                {
+                    Reason = selected;
+                }
+
+                this.DialogResult = DialogResult.OK;
+                this.Close();
+            }
         }
 
         // ===================== Doctor Details dialog (modal) =====================
@@ -418,7 +617,7 @@ namespace HospitalSystem.Views
             public DoctorDetailsDialog(Doctor d)
             {
                 this.Text = "Doctor Details";
-                this.Size = new Size(440, 480);
+                this.Size = new Size(440, 560);
                 this.StartPosition = FormStartPosition.CenterParent;
                 this.FormBorderStyle = FormBorderStyle.FixedDialog;
                 this.MaximizeBox = false;
@@ -473,8 +672,12 @@ namespace HospitalSystem.Views
                 AddRow(body, "Full Name", "Dr. " + d.FullName);
                 AddRow(body, "Specialization", d.Specialization ?? "-");
                 AddRow(body, "Department", HospitalData.DepartmentName(d.DepartmentId));
+                AddRow(body, "License Number", string.IsNullOrWhiteSpace(d.LicenseNumber) ? "-" : d.LicenseNumber);
+                AddRow(body, "Credentials", string.IsNullOrWhiteSpace(d.Credentials) ? "-" : d.Credentials);
                 AddRow(body, "Contact", d.Contact ?? "-");
                 AddRow(body, "Status", d.Status);
+                if (!d.IsActive && !string.IsNullOrWhiteSpace(d.DeactivationReason))
+                    AddRow(body, "Deactivation Reason", d.DeactivationReason);
                 AddRow(body, "Duty Status", d.IsOnDuty ? "On Duty" : "Off Duty");
                 AddRow(body, "Total Appointments", apptCount.ToString());
                 AddRow(body, "Upcoming Appointments", upcomingCount.ToString());
@@ -536,7 +739,7 @@ namespace HospitalSystem.Views
         private class DoctorFormDialog : Form
         {
             private readonly int selectedId;
-            private TextBox txtName, txtSpecialization, txtContact;
+            private TextBox txtName, txtSpecialization, txtContact, txtLicense, txtCredentials;
             private ComboBox cmbDepartment;
             private CheckBox chkOnDuty;
             private Button btnSave, btnCancel;
@@ -548,7 +751,7 @@ namespace HospitalSystem.Views
                 selectedId = existing?.Id ?? 0;
 
                 this.Text = existing == null ? "Add New Doctor" : "Update Doctor";
-                this.Size = new Size(420, 500);
+                this.Size = new Size(420, 640);
                 this.StartPosition = FormStartPosition.CenterParent;
                 this.FormBorderStyle = FormBorderStyle.FixedDialog;
                 this.MaximizeBox = false;
@@ -572,6 +775,14 @@ namespace HospitalSystem.Views
 
                 AddLabel("Specialization", 25, y);
                 txtSpecialization = AddTextBox(25, y + 22, 330);
+                y += 65;
+
+                AddLabel("License Number", 25, y);
+                txtLicense = AddTextBox(25, y + 22, 330);
+                y += 65;
+
+                AddLabel("Credentials", 25, y);
+                txtCredentials = AddTextBox(25, y + 22, 330);
                 y += 65;
 
                 AddLabel("Department *", 25, y);
@@ -631,6 +842,8 @@ namespace HospitalSystem.Views
                 {
                     txtName.Text = existing.FullName;
                     txtSpecialization.Text = existing.Specialization ?? "";
+                    txtLicense.Text = existing.LicenseNumber ?? "";
+                    txtCredentials.Text = existing.Credentials ?? "";
                     txtContact.Text = existing.Contact ?? "";
                     cmbDepartment.SelectedValue = existing.DepartmentId;
                     chkOnDuty.Checked = existing.IsOnDuty;
@@ -722,6 +935,8 @@ namespace HospitalSystem.Views
                             FullName = txtName.Text.Trim(),
                             DepartmentId = departmentId,
                             Specialization = txtSpecialization.Text.Trim(),
+                            LicenseNumber = txtLicense.Text.Trim(),
+                            Credentials = txtCredentials.Text.Trim(),
                             Contact = txtContact.Text.Trim(),
                             IsOnDuty = chkOnDuty.Checked
                         });
@@ -736,6 +951,8 @@ namespace HospitalSystem.Views
                             d.FullName = txtName.Text.Trim();
                             d.DepartmentId = departmentId;
                             d.Specialization = txtSpecialization.Text.Trim();
+                            d.LicenseNumber = txtLicense.Text.Trim();
+                            d.Credentials = txtCredentials.Text.Trim();
                             d.Contact = txtContact.Text.Trim();
                             d.IsOnDuty = chkOnDuty.Checked;
                             HospitalData.UpdateDoctor(d);
