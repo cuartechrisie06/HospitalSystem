@@ -573,8 +573,23 @@ namespace HospitalSystem.Data
             }
         }
 
+        public static void ActivatePatient(Patient p)
+        {
+            p.Status = "Active";
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE patients SET status=@status WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@status", p.Status);
+                cmd.Parameters.AddWithValue("@id", p.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity("Patients", "Activated", $"Activated patient: {p.FullName} ({p.PatientNo})", "👤");
+        }
         public static void DeletePatient(Patient p)
         {
+            if (p == null) return;
+
             p.Status = "Inactive";
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand("UPDATE patients SET status=@status WHERE id=@id", conn))

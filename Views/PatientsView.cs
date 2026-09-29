@@ -277,23 +277,32 @@ namespace HospitalSystem.Views
             });
             grid.Columns.Add(new DataGridViewButtonColumn
             {
-                Name = "colDelete",
+                Name = "colToggle",
                 HeaderText = "",
-                Text = "Delete",
-                UseColumnTextForButtonValue = true,
+                Text = "Toggle",
+                UseColumnTextForButtonValue = false,
                 AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 85,
+                Width = 100,
                 FlatStyle = FlatStyle.Flat
             });
         }
-
         private void Grid_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
         {
-            if (grid.Columns[e.ColumnIndex].Name != "colStatus" || e.Value == null) return;
-            e.CellStyle.ForeColor = e.Value.ToString() == "Active"
-                ? Color.FromArgb(5, 150, 105)
-                : Color.FromArgb(156, 163, 175);
-            e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            if (e.RowIndex < 0) return;
+
+            if (grid.Columns[e.ColumnIndex].Name == "colStatus" && e.Value != null)
+            {
+                e.CellStyle.ForeColor = e.Value.ToString() == "Active"
+                    ? Color.FromArgb(5, 150, 105)
+                    : Color.FromArgb(156, 163, 175);
+                e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            }
+
+            if (grid.Columns[e.ColumnIndex].Name == "colToggle")
+            {
+                var status = grid.Rows[e.RowIndex].Cells["colStatus"].Value?.ToString();
+                e.Value = status == "Active" ? "Deactivate" : "Activate";
+            }
         }
 
         // ===================== Search box placeholder =====================
@@ -340,8 +349,9 @@ namespace HospitalSystem.Views
         // ===================== List loading =====================
         private void LoadPatients(string filter)
         {
-            var active = HospitalData.ActivePatients();
-            var source = active.AsEnumerable();
+            var all = HospitalData.Patients;
+            var source = all.AsEnumerable();
+
             if (!string.IsNullOrWhiteSpace(filter))
             {
                 string f = filter.ToLower();
@@ -367,17 +377,18 @@ namespace HospitalSystem.Views
 
             grid.DataSource = null;
             grid.DataSource = rows;
+
             if (grid.Rows.Count > 0)
                 grid.FirstDisplayedScrollingRowIndex = 0;
-            grid.Refresh();
 
-            // Never leave a row auto-selected/highlighted after a (re)load.
+            grid.Refresh();
             grid.ClearSelection();
             if (grid.CurrentCell != null)
                 grid.CurrentCell = null;
 
+            int activeCount = all.Count(p => p.Status == "Active");
             string noun = rows.Count == 1 ? "patient" : "patients";
-            lblCount.Text = $"Showing {rows.Count} of {active.Count} {noun}";
+            lblCount.Text = $"Showing {rows.Count} of {all.Count} {noun} ({activeCount} active)";
         }
 
         private void Grid_CellClick(object sender, DataGridViewCellEventArgs e)
@@ -392,8 +403,8 @@ namespace HospitalSystem.Views
                 case "colEdit":
                     OpenEditForm(id);
                     break;
-                case "colDelete":
-                    DeletePatientFlow(id);
+                case "colToggle":
+                    TogglePatientStatus(id);
                     break;
                 default:
                     ShowDetails(id);
@@ -461,6 +472,39 @@ namespace HospitalSystem.Views
 
             LoadPatients(GetSearchText());
         }
+        private void TogglePatientStatus(int id)
+        {
+            var p = HospitalData.GetPatient(id);
+            if (p == null) return;
+
+            if (p.Status == "Active")
+            {
+                if (HospitalData.HasActiveAdmission(id))
+                {
+                    MessageBox.Show(
+                        "This patient currently has an active admission and must be discharged before they can be deactivated.",
+                        "Cannot Deactivate", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+
+                if (MessageBox.Show("Deactivate this patient?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
+                    return;
+
+                HospitalData.DeletePatient(p);
+                MessageBox.Show("Patient deactivated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                if (MessageBox.Show("Activate this patient?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                    return;
+
+                HospitalData.ActivatePatient(p);
+                MessageBox.Show("Patient activated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            LoadPatients(GetSearchText());
+        }
+
 
         // ===================== Patient Details dialog (modal) =====================
         private class PatientDetailsDialog : Form
