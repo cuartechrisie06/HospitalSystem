@@ -147,10 +147,16 @@ CREATE TABLE IF NOT EXISTS payments (
     id              INT PRIMARY KEY AUTO_INCREMENT,
     bill_id         INT NOT NULL,
     amount          DECIMAL(12,2) NOT NULL,
-    payment_method  VARCHAR(20) NOT NULL,
+    payment_method  VARCHAR(20) NOT NULL,   -- Cash / Card / HMO / EWallet / BankTransfer
     payment_date    DATETIME NOT NULL,
     reference_no    VARCHAR(100),
     received_by     VARCHAR(100),
+    amount_tendered DECIMAL(12,2) NULL,     -- cash: amount handed over (change = tendered - amount)
+    card_type       VARCHAR(30),
+    card_last4      CHAR(4),                -- never the full card number
+    approval_code   VARCHAR(50),
+    hmo_provider    VARCHAR(100),
+    hmo_loa_no      VARCHAR(50),
     FOREIGN KEY (bill_id) REFERENCES bills(id)
 );
 

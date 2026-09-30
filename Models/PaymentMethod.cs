@@ -4,8 +4,8 @@ namespace HospitalSystem.Models
     {
         Cash,
         Card,
+        HMO,            // settlement from the HMO against its approved coverage (was "Insurance")
         EWallet,
-        BankTransfer,
-        Insurance
+        BankTransfer
     }
 }

@@ -114,7 +114,8 @@ namespace HospitalSystem.Views
                     list.Add(new Row
                     {
                         Style = RowStyle.Line,
-                        Text = p.PaymentDate.ToString("yyyy-MM-dd HH:mm") + "  " + p.Method +
+                        Text = p.PaymentDate.ToString("yyyy-MM-dd HH:mm") + "  " + p.MethodLabel +
+                            (string.IsNullOrEmpty(p.Details) ? "" : "  (" + p.Details + ")") +
                             (string.IsNullOrEmpty(p.ReferenceNo) ? "" : "  Ref " + p.ReferenceNo),
                         Amount = p.Amount.ToString("N2")
                     });

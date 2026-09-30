@@ -11,6 +11,7 @@ namespace HospitalSystem.Views
     public class BillingView : UserControl
     {
         private const string AllStatuses = "All";
+        private const string WithBalance = "Outstanding";
 
         private ComboBox cmbPatient, cmbAdmission, cmbAppointment, cmbFilter;
         private CheckBox chkAutoCharges;
@@ -32,6 +33,12 @@ namespace HospitalSystem.Views
         private TextBox txtReference;
         private Button btnPay;
         private DataGridView gridPayments;
+        private Label lblPatientBalance, lblHmoBalance, lblPatientOutstanding;
+        private Panel pnlCash, pnlCard, pnlHmo;
+        private NumericUpDown numTendered;
+        private Label lblChange;
+        private ComboBox cmbCardType;
+        private TextBox txtCardLast4, txtApprovalCode, txtPayHmoProvider, txtPayHmoLoa;
 
         private TabControl tabsSummary;
         private DataGridView gridBreakdown;
@@ -153,6 +160,7 @@ namespace HospitalSystem.Views
             cmbFilter.Size = new Size(130, 28);
             cmbFilter.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbFilter.Items.Add(AllStatuses);
+            cmbFilter.Items.Add(WithBalance);
             foreach (var st in Enum.GetNames(typeof(BillStatus)))
                 cmbFilter.Items.Add(st);
             cmbFilter.SelectedIndex = 0;
@@ -421,37 +429,106 @@ namespace HospitalSystem.Views
             lblPayments = MakeCardHeader("Payments");
             panel.Controls.Add(lblPayments);
 
+            // Current balance of the selected bill, split between the patient and the HMO.
+            Panel summary = new Panel();
+            summary.Dock = DockStyle.Top;
+            summary.Height = 62;
+            summary.BackColor = Color.FromArgb(249, 250, 251);
+            panel.Controls.Add(summary);
+            summary.BringToFront();
+
+            lblPatientBalance = MakeLabel("", 5, 4);
+            lblPatientBalance.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            summary.Controls.Add(lblPatientBalance);
+            lblHmoBalance = MakeLabel("", 5, 23);
+            summary.Controls.Add(lblHmoBalance);
+            lblPatientOutstanding = MakeLabel("", 5, 42);
+            lblPatientOutstanding.ForeColor = Color.FromArgb(180, 83, 9);
+            summary.Controls.Add(lblPatientOutstanding);
+
             Panel entry = new Panel();
             entry.Dock = DockStyle.Top;
-            entry.Height = 90;
+            entry.Height = 140;
             panel.Controls.Add(entry);
+            entry.BringToFront();
 
-            entry.Controls.Add(MakeLabel("Amount", 5, 0));
+            entry.Controls.Add(MakeLabel("Amount", 5, 5));
             numPayAmount = new NumericUpDown();
-            numPayAmount.Location = new Point(5, 18);
+            numPayAmount.Location = new Point(5, 23);
             numPayAmount.Size = new Size(110, 28);
             numPayAmount.DecimalPlaces = 2;
             numPayAmount.Maximum = 10000000;
             numPayAmount.ThousandsSeparator = true;
+            numPayAmount.ValueChanged += (s, e) => UpdateChange();
             entry.Controls.Add(numPayAmount);
 
-            entry.Controls.Add(MakeLabel("Method", 120, 0));
+            entry.Controls.Add(MakeLabel("Method", 120, 5));
             cmbMethod = new ComboBox();
-            cmbMethod.Location = new Point(120, 18);
+            cmbMethod.Location = new Point(120, 23);
             cmbMethod.Size = new Size(110, 28);
             cmbMethod.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbMethod.DataSource = Enum.GetValues(typeof(PaymentMethod));
+            cmbMethod.SelectedIndexChanged += CmbMethod_SelectedIndexChanged;
             entry.Controls.Add(cmbMethod);
 
-            entry.Controls.Add(MakeLabel("Reference / OR No.", 235, 0));
+            entry.Controls.Add(MakeLabel("Reference / OR No.", 235, 5));
             txtReference = new TextBox();
-            txtReference.Location = new Point(235, 18);
+            txtReference.Location = new Point(235, 23);
             txtReference.Size = new Size(150, 28);
             entry.Controls.Add(txtReference);
 
+            // Method-specific details: only the panel for the selected method is shown.
+            pnlCash = MakeMethodPanel(entry);
+            pnlCash.Controls.Add(MakeLabel("Cash tendered", 0, 0));
+            numTendered = new NumericUpDown();
+            numTendered.Location = new Point(0, 18);
+            numTendered.Size = new Size(110, 28);
+            numTendered.DecimalPlaces = 2;
+            numTendered.Maximum = 10000000;
+            numTendered.ThousandsSeparator = true;
+            numTendered.ValueChanged += (s, e) => UpdateChange();
+            pnlCash.Controls.Add(numTendered);
+            lblChange = MakeLabel("Change: 0.00", 120, 21);
+            lblChange.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
+            pnlCash.Controls.Add(lblChange);
+
+            pnlCard = MakeMethodPanel(entry);
+            pnlCard.Controls.Add(MakeLabel("Card type", 0, 0));
+            cmbCardType = new ComboBox();
+            cmbCardType.Location = new Point(0, 18);
+            cmbCardType.Size = new Size(110, 28);
+            cmbCardType.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbCardType.Items.AddRange(new object[] { "Visa", "Mastercard", "JCB", "Amex", "Debit card" });
+            cmbCardType.SelectedIndex = 0;
+            pnlCard.Controls.Add(cmbCardType);
+            pnlCard.Controls.Add(MakeLabel("Last 4 digits", 115, 0));
+            txtCardLast4 = new TextBox();
+            txtCardLast4.Location = new Point(115, 18);
+            txtCardLast4.Size = new Size(75, 28);
+            txtCardLast4.MaxLength = 4;
+            txtCardLast4.KeyPress += (s, e) => { if (!char.IsDigit(e.KeyChar) && !char.IsControl(e.KeyChar)) e.Handled = true; };
+            pnlCard.Controls.Add(txtCardLast4);
+            pnlCard.Controls.Add(MakeLabel("Approval code", 195, 0));
+            txtApprovalCode = new TextBox();
+            txtApprovalCode.Location = new Point(195, 18);
+            txtApprovalCode.Size = new Size(110, 28);
+            pnlCard.Controls.Add(txtApprovalCode);
+
+            pnlHmo = MakeMethodPanel(entry);
+            pnlHmo.Controls.Add(MakeLabel("HMO provider", 0, 0));
+            txtPayHmoProvider = new TextBox();
+            txtPayHmoProvider.Location = new Point(0, 18);
+            txtPayHmoProvider.Size = new Size(150, 28);
+            pnlHmo.Controls.Add(txtPayHmoProvider);
+            pnlHmo.Controls.Add(MakeLabel("LOA / Approval No.", 155, 0));
+            txtPayHmoLoa = new TextBox();
+            txtPayHmoLoa.Location = new Point(155, 18);
+            txtPayHmoLoa.Size = new Size(150, 28);
+            pnlHmo.Controls.Add(txtPayHmoLoa);
+
             btnPay = new Button();
             btnPay.Text = "Record Payment";
-            btnPay.Location = new Point(5, 52);
+            btnPay.Location = new Point(5, 104);
             btnPay.Size = new Size(130, 30);
             btnPay.BackColor = Color.FromArgb(5, 150, 105);
             btnPay.ForeColor = Color.White;
@@ -464,7 +541,54 @@ namespace HospitalSystem.Views
             panel.Controls.Add(gridPayments);
             gridPayments.BringToFront();
 
+            ShowMethodPanel();
             return panel;
+        }
+
+        private static Panel MakeMethodPanel(Panel entry)
+        {
+            Panel p = new Panel();
+            p.Location = new Point(5, 55);
+            p.Size = new Size(390, 46);
+            entry.Controls.Add(p);
+            return p;
+        }
+
+        private PaymentMethod SelectedMethod =>
+            cmbMethod.SelectedItem is PaymentMethod m ? m : PaymentMethod.Cash;
+
+        private void ShowMethodPanel()
+        {
+            var method = SelectedMethod;
+            pnlCash.Visible = method == PaymentMethod.Cash;
+            pnlCard.Visible = method == PaymentMethod.Card;
+            pnlHmo.Visible = method == PaymentMethod.HMO;
+        }
+
+        private void CmbMethod_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            if (pnlCash == null) return;   // still building the panel
+            ShowMethodPanel();
+            PrefillPayment(GetSelectedBill());
+        }
+
+        // Suggest paying off whichever side the method settles: the HMO share or the patient share.
+        private void PrefillPayment(Bill bill)
+        {
+            decimal owed = bill == null ? 0 : SelectedMethod == PaymentMethod.HMO ? bill.HmoBalance : bill.Balance;
+            numPayAmount.Value = Math.Min(Math.Max(owed, 0), numPayAmount.Maximum);
+            numTendered.Value = numPayAmount.Value;
+            txtPayHmoProvider.Text = bill != null ? bill.Adjustments.HmoProvider ?? "" : "";
+            txtPayHmoLoa.Text = bill != null ? bill.Adjustments.HmoLoaNo ?? "" : "";
+            UpdateChange();
+        }
+
+        private void UpdateChange()
+        {
+            if (lblChange == null || numTendered == null) return;
+            decimal change = numTendered.Value - numPayAmount.Value;
+            lblChange.Text = change >= 0 ? "Change: " + Money(change) : "Short by " + Money(-change);
+            lblChange.ForeColor = change >= 0 ? Color.Black : Color.FromArgb(220, 38, 38);
         }
 
         // -------------------- Small UI helpers --------------------
@@ -558,7 +682,9 @@ namespace HospitalSystem.Views
 
             loading = true;
             gridBills.DataSource = HospitalData.Bills
-                .Where(b => filter == AllStatuses || b.Status.ToString() == filter)
+                .Where(b => filter == AllStatuses
+                    || (filter == WithBalance ? b.Status != BillStatus.Cancelled && b.TotalOutstanding > 0
+                                              : b.Status.ToString() == filter))
                 .OrderByDescending(b => b.BillDate)
                 .Select(b => new
                 {
@@ -572,7 +698,8 @@ namespace HospitalSystem.Views
                     Gross = Money(b.Subtotal),
                     Due = Money(b.TotalAmount),
                     Paid = Money(b.AmountPaid),
-                    Balance = Money(b.Balance),
+                    PatientBalance = Money(b.Balance),
+                    HmoBalance = Money(b.HmoBalance),
                     Status = b.Status.ToString(),
                     b.Notes
                 }).ToList();
@@ -590,7 +717,9 @@ namespace HospitalSystem.Views
             }
             loading = false;
 
-            lblBills.Text = "Bills    (Outstanding balance: " + Money(HospitalData.OutstandingBalance()) + ")";
+            decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
+            lblBills.Text = "Bills    Outstanding - patients: " + Money(patientsOwe) + "   HMO: " + Money(hmosOwe) +
+                            "   Total: " + Money(patientsOwe + hmosOwe);
             LoadDetail();
         }
 
@@ -631,7 +760,8 @@ namespace HospitalSystem.Views
                 {
                     Date = p.PaymentDate.ToString("yyyy-MM-dd HH:mm"),
                     Amount = Money(p.Amount),
-                    Method = p.Method.ToString(),
+                    Method = p.MethodLabel,
+                    p.Details,
                     Reference = p.ReferenceNo,
                     p.ReceivedBy
                 }).ToList();
@@ -641,21 +771,46 @@ namespace HospitalSystem.Views
                 : "Bill Items - " + bill.BillNo + "    Gross: " + Money(bill.Subtotal) + "    Due: " + Money(bill.TotalAmount);
             lblPayments.Text = bill == null
                 ? "Payments"
-                : "Payments    Paid: " + Money(bill.AmountPaid) + "    Balance: " + Money(bill.Balance);
+                : "Payments - " + bill.BillNo + "    Outstanding: " + Money(bill.TotalOutstanding);
+            LoadBalanceSummary(bill);
 
             // Pre-fill with the remaining balance: the common case is paying it in full.
-            numPayAmount.Value = bill == null ? 0 : Math.Min(Math.Max(bill.Balance, 0), numPayAmount.Maximum);
+            PrefillPayment(bill);
 
             bool editable = bill != null && bill.Status != BillStatus.Cancelled;
             btnAddItem.Enabled = editable;
             btnRemoveItem.Enabled = editable;
-            btnPay.Enabled = editable && bill.Balance > 0;
+            btnPay.Enabled = editable && bill.TotalOutstanding > 0;
             btnCancelBill.Enabled = editable;
             btnApplyAdjustments.Enabled = editable;
             btnPrintStatement.Enabled = bill != null;
 
             LoadBreakdown(bill);
             LoadAdjustments(bill);
+        }
+
+        private void LoadBalanceSummary(Bill bill)
+        {
+            if (bill == null)
+            {
+                lblPatientBalance.Text = "Select a bill to see its balance.";
+                lblHmoBalance.Text = lblPatientOutstanding.Text = "";
+                return;
+            }
+
+            lblPatientBalance.Text = "Patient balance: " + Money(bill.Balance) +
+                "    (due " + Money(bill.TotalAmount) + ", paid " + Money(bill.TotalAmount - bill.Balance) + ")";
+            lblHmoBalance.Text = bill.HmoAmount > 0 || bill.HmoPaid > 0
+                ? "HMO outstanding (" + bill.Adjustments.HmoProvider + "): " + Money(bill.HmoBalance) +
+                  "    (covered " + Money(bill.HmoAmount) + ", received " + Money(bill.HmoAmount - bill.HmoBalance) + ")"
+                : "No HMO coverage on this bill.";
+
+            // The patient may owe on other bills too (e.g. an earlier admission).
+            decimal allBills = HospitalData.PatientOutstanding(bill.PatientId);
+            int count = HospitalData.PatientBillsWithBalance(bill.PatientId);
+            lblPatientOutstanding.Text = allBills > bill.Balance
+                ? HospitalData.PatientName(bill.PatientId) + " owes " + Money(allBills) + " across " + count + " bills."
+                : "";
         }
 
         private void LoadBreakdown(Bill bill)
@@ -869,18 +1024,44 @@ namespace HospitalSystem.Views
             var bill = GetSelectedBill();
             if (bill == null) return;
 
+            var method = SelectedMethod;
+            var payment = new Payment
+            {
+                Amount = numPayAmount.Value,
+                Method = method,
+                ReferenceNo = string.IsNullOrWhiteSpace(txtReference.Text) ? null : txtReference.Text.Trim()
+            };
+            if (method == PaymentMethod.Cash)
+                payment.AmountTendered = numTendered.Value;
+            else if (method == PaymentMethod.Card)
+            {
+                payment.CardType = cmbCardType.SelectedItem as string;
+                payment.CardLast4 = txtCardLast4.Text.Trim();
+                payment.ApprovalCode = txtApprovalCode.Text.Trim();
+            }
+            else if (method == PaymentMethod.HMO)
+            {
+                payment.HmoProvider = txtPayHmoProvider.Text.Trim();
+                payment.HmoLoaNo = txtPayHmoLoa.Text.Trim();
+            }
+
             try
             {
-                HospitalData.RecordPayment(bill, new Payment
-                {
-                    Amount = numPayAmount.Value,
-                    Method = (PaymentMethod)cmbMethod.SelectedItem,
-                    ReferenceNo = string.IsNullOrWhiteSpace(txtReference.Text) ? null : txtReference.Text.Trim()
-                });
+                HospitalData.RecordPayment(bill, payment);
 
                 txtReference.Clear();
-                MessageBox.Show("Payment recorded. Remaining balance: " + Money(bill.Balance) +
-                    (bill.IsFullyPaid() ? " (fully paid)." : "."), "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                txtCardLast4.Clear();
+                txtApprovalCode.Clear();
+
+                string msg = payment.MethodLabel + " payment of " + Money(payment.Amount) + " recorded.";
+                if (method == PaymentMethod.Cash && payment.Change > 0)
+                    msg += "\nChange: " + Money(payment.Change);
+                msg += "\n\nPatient balance: " + Money(bill.Balance);
+                if (bill.HmoAmount > 0 || bill.HmoPaid > 0)
+                    msg += "\nHMO outstanding: " + Money(bill.HmoBalance);
+                if (bill.IsFullyPaid())
+                    msg += "\n\nThe bill is fully paid.";
+                MessageBox.Show(msg, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 LoadBills(bill.Id);
             }
             catch (InvalidOperationException ex)

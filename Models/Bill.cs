@@ -15,8 +15,13 @@ namespace HospitalSystem.Models
         public int? AppointmentId { get; set; }
         public DateTime BillDate { get; set; }
         public decimal TotalAmount { get; set; }     // amount due from the patient, after all adjustments
-        public decimal AmountPaid { get; set; }
-        public decimal Balance { get; set; }
+        public decimal AmountPaid { get; set; }      // everything received, patient and HMO
+        public decimal Balance { get; set; }         // still owed by the patient
+        public decimal HmoBalance { get; private set; }   // HMO coverage not yet received from the HMO
+
+        public decimal TotalOutstanding => Balance + HmoBalance;
+        public decimal PatientPaid => Payments.Where(p => !p.IsHmo).Sum(p => p.Amount);
+        public decimal HmoPaid => Payments.Where(p => p.IsHmo).Sum(p => p.Amount);
         public BillStatus Status { get; set; } = BillStatus.Unpaid;
         public string Notes { get; set; }
         public string CreatedBy { get; set; }
@@ -65,7 +70,8 @@ namespace HospitalSystem.Models
             var item = Items.FirstOrDefault(i => i.Id == itemId);
             if (item == null)
                 throw new InvalidOperationException("Item not found on this bill.");
-            if (Compute(Items.Where(i => i != item).Sum(i => i.Amount), Adjustments).Due < AmountPaid)
+            var after = Compute(Items.Where(i => i != item).Sum(i => i.Amount), Adjustments);
+            if (ComputeBalances(after.Due, after.Hmo).Patient < 0)
                 throw new InvalidOperationException("Removing this item would make the amount due less than what has already been paid.");
 
             Items.Remove(item);
@@ -98,9 +104,9 @@ namespace HospitalSystem.Models
             if (adj.HmoCoverage > totals.Net)
                 throw new InvalidOperationException("HMO coverage of " + adj.HmoCoverage.ToString("N2") +
                     " is more than the net amount of " + totals.Net.ToString("N2") + ".");
-            if (totals.Due < AmountPaid)
+            if (ComputeBalances(totals.Due, totals.Hmo).Patient < 0)
                 throw new InvalidOperationException("These adjustments would bring the amount due to " + totals.Due.ToString("N2") +
-                    ", below the " + AmountPaid.ToString("N2") + " already paid.");
+                    ", below the " + (AmountPaid - Math.Min(HmoPaid, totals.Hmo)).ToString("N2") + " already paid toward it.");
 
             Adjustments = adj.Clone();
             CalculateTotal();
@@ -187,9 +193,30 @@ namespace HospitalSystem.Models
             return TotalAmount;
         }
 
+        private struct Balances
+        {
+            public decimal Patient, Hmo;
+        }
+
+        // Patient payments go against the patient's share, HMO payments against the HMO coverage.
+        // HMO money beyond the coverage (e.g. coverage later lowered) counts toward the patient's share.
+        private Balances ComputeBalances(decimal due, decimal hmoAmount)
+        {
+            decimal hmoPaid = HmoPaid;
+            decimal hmoApplied = Math.Min(hmoPaid, hmoAmount);
+            return new Balances
+            {
+                Patient = due - PatientPaid - (hmoPaid - hmoApplied),
+                Hmo = hmoAmount - hmoApplied
+            };
+        }
+
         public decimal CalculateBalance()
         {
-            Balance = TotalAmount - AmountPaid;
+            AmountPaid = Payments.Sum(p => p.Amount);
+            var b = ComputeBalances(TotalAmount, HmoAmount);
+            Balance = b.Patient;
+            HmoBalance = b.Hmo;
             return Balance;
         }
 
@@ -240,8 +267,16 @@ namespace HospitalSystem.Models
             }
 
             lines.Add(new BreakdownLine("Amount due from patient", TotalAmount, BreakdownLineKind.Total));
-            lines.Add(new BreakdownLine("Less: Payments received", -AmountPaid));
-            lines.Add(new BreakdownLine("Balance", Balance, BreakdownLineKind.Total));
+            lines.Add(new BreakdownLine("Less: Patient payments (cash, card, ...)", -(TotalAmount - Balance)));
+            lines.Add(new BreakdownLine("Patient balance", Balance, BreakdownLineKind.Total));
+
+            if (HmoAmount > 0 || HmoPaid > 0)
+            {
+                lines.Add(new BreakdownLine("HMO receivable - " + (adj.HmoProvider ?? "HMO"), HmoAmount, BreakdownLineKind.Subtotal));
+                lines.Add(new BreakdownLine("Less: Received from HMO", -(HmoAmount - HmoBalance)));
+                lines.Add(new BreakdownLine("HMO outstanding", HmoBalance, BreakdownLineKind.Total));
+                lines.Add(new BreakdownLine("Total outstanding (patient + HMO)", TotalOutstanding, BreakdownLineKind.Total));
+            }
             return lines;
         }
 
@@ -264,13 +299,32 @@ namespace HospitalSystem.Models
                 throw new InvalidOperationException("Cannot pay a cancelled bill.");
             if (!payment.IsValid())
                 throw new InvalidOperationException("Payment amount must be greater than zero.");
-            if (payment.Amount > Balance)
+
+            if (payment.IsHmo)
+            {
+                if (HmoBalance <= 0)
+                    throw new InvalidOperationException("There is no HMO balance on this bill. Set the approved HMO coverage " +
+                        "on the Discounts / Tax / HMO tab first.");
+                if (payment.Amount > HmoBalance)
+                    throw new InvalidOperationException("HMO payment of " + payment.Amount.ToString("N2") +
+                        " is more than the HMO outstanding of " + HmoBalance.ToString("N2") + ".");
+                if (string.IsNullOrWhiteSpace(payment.HmoProvider))
+                    payment.HmoProvider = Adjustments.HmoProvider;
+                if (string.IsNullOrWhiteSpace(payment.HmoLoaNo))
+                    payment.HmoLoaNo = Adjustments.HmoLoaNo;
+            }
+            else if (payment.Amount > Balance)
+            {
                 throw new InvalidOperationException("Payment of " + payment.Amount.ToString("N2") +
-                    " is more than the remaining balance of " + Balance.ToString("N2") + ".");
+                    " is more than the patient balance of " + Balance.ToString("N2") + ".");
+            }
+
+            string error = payment.ValidationError();
+            if (error != null)
+                throw new InvalidOperationException(error);
 
             payment.BillId = Id;
             Payments.Add(payment);
-            AmountPaid += payment.Amount;
             CalculateBalance();
             UpdateStatus();
         }
@@ -305,11 +359,11 @@ namespace HospitalSystem.Models
             Status = BillStatus.Cancelled;
         }
 
-        // A bill with no items yet is not considered paid. One fully covered by
-        // discounts/HMO (nothing due from the patient) is.
+        // Paid once both the patient's share and the HMO's share are settled.
+        // A bill with no items yet is not considered paid.
         public bool IsFullyPaid()
         {
-            return Subtotal > 0 && Balance <= 0;
+            return Subtotal > 0 && Balance <= 0 && HmoBalance <= 0;
         }
 
         public override string ToString()

@@ -478,8 +478,9 @@ namespace HospitalSystem.Views
                 var bill = HospitalData.OpenBillForAdmission(adm.Id);
                 string msg = "Patient discharged. Stay: " + adm.DaysStayed + " day(s).";
                 if (bill != null)
-                    msg += "\n\nBill " + bill.BillNo + " total: " + bill.TotalAmount.ToString("N2") +
-                           ", balance: " + bill.Balance.ToString("N2") + ".";
+                    msg += "\n\nBill " + bill.BillNo + " amount due: " + bill.TotalAmount.ToString("N2") +
+                           ", patient balance: " + bill.Balance.ToString("N2") +
+                           (bill.HmoBalance > 0 ? ", HMO outstanding: " + bill.HmoBalance.ToString("N2") : "") + ".";
                 MessageBox.Show(msg, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 LoadCombos();
                 LoadAdmissions();

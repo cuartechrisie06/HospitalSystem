@@ -333,22 +333,18 @@ namespace HospitalSystem.Data
             };
 
             foreach (var col in billColumns)
-            {
-                bool exists;
-                using (var cmd = new MySqlCommand(
-                    "SELECT COUNT(*) FROM information_schema.columns " +
-                    "WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name = @col", conn))
-                {
-                    cmd.Parameters.AddWithValue("@col", col.Name);
-                    exists = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
-                }
+                AddColumnIfMissing(conn, "bills", col.Name, col.Ddl);
 
-                if (!exists)
-                {
-                    using (var cmd = new MySqlCommand("ALTER TABLE bills ADD COLUMN " + col.Ddl, conn))
-                        cmd.ExecuteNonQuery();
-                }
-            }
+            // Method-specific payment details (card, HMO, cash tendered).
+            AddColumnIfMissing(conn, "payments", "amount_tendered", "amount_tendered DECIMAL(12,2) NULL");
+            AddColumnIfMissing(conn, "payments", "card_type", "card_type VARCHAR(30)");
+            AddColumnIfMissing(conn, "payments", "card_last4", "card_last4 CHAR(4)");
+            AddColumnIfMissing(conn, "payments", "approval_code", "approval_code VARCHAR(50)");
+            AddColumnIfMissing(conn, "payments", "hmo_provider", "hmo_provider VARCHAR(100)");
+            AddColumnIfMissing(conn, "payments", "hmo_loa_no", "hmo_loa_no VARCHAR(50)");
+            // Payments recorded as "Insurance" before HMO became its own method.
+            using (var cmd = new MySqlCommand("UPDATE payments SET payment_method='HMO' WHERE payment_method='Insurance'", conn))
+                cmd.ExecuteNonQuery();
 
             // Default admission charges, same as the seed in schema.sql.
             using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM charge_schedules", conn))
@@ -367,6 +363,25 @@ namespace HospitalSystem.Data
                         seed.ExecuteNonQuery();
                 }
             }
+        }
+
+        private static string ReadString(MySqlDataReader r, string column) =>
+            r.IsDBNull(r.GetOrdinal(column)) ? null : r.GetString(column);
+
+        // Works on both MySQL and MariaDB (no "ADD COLUMN IF NOT EXISTS").
+        private static void AddColumnIfMissing(MySqlConnection conn, string table, string column, string ddl)
+        {
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = @table AND column_name = @col", conn))
+            {
+                cmd.Parameters.AddWithValue("@table", table);
+                cmd.Parameters.AddWithValue("@col", column);
+                if (Convert.ToInt32(cmd.ExecuteScalar()) > 0) return;
+            }
+
+            using (var cmd = new MySqlCommand("ALTER TABLE " + table + " ADD COLUMN " + ddl, conn))
+                cmd.ExecuteNonQuery();
         }
 
         private static List<ChargeSchedule> LoadChargeSchedules(MySqlConnection conn)
@@ -475,7 +490,8 @@ namespace HospitalSystem.Data
             }
 
             using (var cmd = new MySqlCommand(
-                "SELECT id, bill_id, amount, payment_method, payment_date, reference_no, received_by FROM payments", conn))
+                "SELECT id, bill_id, amount, payment_method, payment_date, reference_no, received_by, " +
+                "amount_tendered, card_type, card_last4, approval_code, hmo_provider, hmo_loa_no FROM payments", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
@@ -493,8 +509,14 @@ namespace HospitalSystem.Data
                         Amount = r.GetDecimal("amount"),
                         Method = method,
                         PaymentDate = r.GetDateTime("payment_date"),
-                        ReferenceNo = r.IsDBNull(r.GetOrdinal("reference_no")) ? null : r.GetString("reference_no"),
-                        ReceivedBy = r.IsDBNull(r.GetOrdinal("received_by")) ? null : r.GetString("received_by")
+                        ReferenceNo = ReadString(r, "reference_no"),
+                        ReceivedBy = ReadString(r, "received_by"),
+                        AmountTendered = r.IsDBNull(r.GetOrdinal("amount_tendered")) ? (decimal?)null : r.GetDecimal("amount_tendered"),
+                        CardType = ReadString(r, "card_type"),
+                        CardLast4 = ReadString(r, "card_last4"),
+                        ApprovalCode = ReadString(r, "approval_code"),
+                        HmoProvider = ReadString(r, "hmo_provider"),
+                        HmoLoaNo = ReadString(r, "hmo_loa_no")
                     });
                 }
             }
@@ -999,8 +1021,19 @@ namespace HospitalSystem.Data
         public static Bill OpenBillForAppointment(int appointmentId) =>
             Bills.FirstOrDefault(b => b.AppointmentId == appointmentId && b.Status != BillStatus.Cancelled);
 
-        public static decimal OutstandingBalance() =>
-            Bills.Where(b => b.Status != BillStatus.Cancelled).Sum(b => b.Balance);
+        public static IEnumerable<Bill> OpenBills() => Bills.Where(b => b.Status != BillStatus.Cancelled);
+
+        // Still owed by patients, across all bills.
+        public static decimal OutstandingBalance() => OpenBills().Sum(b => b.Balance);
+
+        // Approved HMO coverage not yet received from the HMOs.
+        public static decimal OutstandingHmo() => OpenBills().Sum(b => b.HmoBalance);
+
+        public static decimal PatientOutstanding(int patientId) =>
+            OpenBills().Where(b => b.PatientId == patientId).Sum(b => b.Balance);
+
+        public static int PatientBillsWithBalance(int patientId) =>
+            OpenBills().Count(b => b.PatientId == patientId && b.Balance > 0);
 
         // Line items from the charge schedule that apply to the admission's ward,
         // with per-day charges covering the days stayed so far.
@@ -1219,22 +1252,33 @@ namespace HospitalSystem.Data
             using (var tx = conn.BeginTransaction())
             {
                 using (var cmd = new MySqlCommand(
-                    "INSERT INTO payments (bill_id, amount, payment_method, payment_date, reference_no, received_by) " +
-                    "VALUES (@billId, @amount, @method, @date, @ref, @receivedBy); SELECT LAST_INSERT_ID();", conn, tx))
+                    "INSERT INTO payments (bill_id, amount, payment_method, payment_date, reference_no, received_by, " +
+                    "amount_tendered, card_type, card_last4, approval_code, hmo_provider, hmo_loa_no) " +
+                    "VALUES (@billId, @amount, @method, @date, @ref, @receivedBy, " +
+                    "@tendered, @cardType, @cardLast4, @approval, @hmoProvider, @hmoLoa); SELECT LAST_INSERT_ID();", conn, tx))
                 {
                     cmd.Parameters.AddWithValue("@billId", p.BillId);
                     cmd.Parameters.AddWithValue("@amount", p.Amount);
                     cmd.Parameters.AddWithValue("@method", p.Method.ToString());
                     cmd.Parameters.AddWithValue("@date", p.PaymentDate);
-                    cmd.Parameters.AddWithValue("@ref", (object)p.ReferenceNo ?? DBNull.Value);
-                    cmd.Parameters.AddWithValue("@receivedBy", (object)p.ReceivedBy ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@ref", NullIfBlank(p.ReferenceNo));
+                    cmd.Parameters.AddWithValue("@receivedBy", NullIfBlank(p.ReceivedBy));
+                    cmd.Parameters.AddWithValue("@tendered", (object)p.AmountTendered ?? DBNull.Value);
+                    cmd.Parameters.AddWithValue("@cardType", NullIfBlank(p.CardType));
+                    cmd.Parameters.AddWithValue("@cardLast4", NullIfBlank(p.CardLast4));
+                    cmd.Parameters.AddWithValue("@approval", NullIfBlank(p.ApprovalCode));
+                    cmd.Parameters.AddWithValue("@hmoProvider", NullIfBlank(p.HmoProvider));
+                    cmd.Parameters.AddWithValue("@hmoLoa", NullIfBlank(p.HmoLoaNo));
                     p.Id = Convert.ToInt32(cmd.ExecuteScalar());
                 }
                 SaveBillTotals(b, conn, tx);
                 tx.Commit();
             }
 
-            LogActivity("Billing", "Payment", $"Payment of {p.Amount:N2} ({p.Method}) received for {b.BillNo}", "💰");
+            LogActivity("Billing", "Payment",
+                $"{p.MethodLabel} payment of {p.Amount:N2} received for {b.BillNo}" +
+                (string.IsNullOrEmpty(p.Details) ? "" : $" ({p.Details})") +
+                $". Patient balance {b.Balance:N2}" + (b.HmoBalance > 0 ? $", HMO outstanding {b.HmoBalance:N2}" : ""), "💰");
         }
 
         public static void CancelBill(Bill b)
