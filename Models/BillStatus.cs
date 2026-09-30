@@ -5,6 +5,6 @@ namespace HospitalSystem.Models
         Unpaid,
         PartiallyPaid,
         Paid,
-        Cancelled
+        Cancelled   // bills can no longer be cancelled; kept so bills cancelled earlier still load
     }
 }

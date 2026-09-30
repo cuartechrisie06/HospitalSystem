@@ -14,8 +14,8 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 - **Patients** – Register, search, update
 - **Doctors** – Doctor records (license number, credentials, specialization, contact) and duty status, with search; deactivate a doctor with a required reason (kept on the record) and reactivate later. "Show inactive" reveals deactivated doctors; inactive doctors are hidden from appointment/admission scheduling.
 - **Appointments** – Schedule from a searchable, click-to-select table of active patients (captures patient, department, doctor, reason, date & time), confirm, reschedule, mark completed, cancel (with basic double-booking protection). Deactivated patients and doctors cannot be scheduled — they are excluded from the pickers and re-checked at schedule time.
-- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge, cancel (for mistaken entries). Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (when the hospital is full, patients go on a **waiting list** as Pending admissions and are given a bed with **Assign Bed to Selected** once one frees up; their bill opens at that point). Admission status changes feed billing: admitting opens a linked bill from the pre-set admission charge schedule (admit → billing trigger), discharging finalizes all per-day charges to the actual length of stay, and cancelling a mistaken admission voids its unpaid bill.
-- **Billing** – Bills per patient (optionally linked to an admission or appointment; an admission's bill is created automatically on admit), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid / Cancelled)
+- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge. Admissions can't be cancelled; a patient still on the waiting list can be removed from it. Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (when the hospital is full, patients go on a **waiting list** as Pending admissions and are given a bed with **Assign Bed to Selected** once one frees up; their bill opens at that point). Admission status changes feed billing: admitting opens a linked bill from the pre-set admission charge schedule (admit → billing trigger), discharging finalizes all per-day charges to the actual length of stay.
+- **Billing** – Bills per patient (optionally linked to an admission or appointment; an admission's bill is created automatically on admit), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid). Bills can't be cancelled; bills cancelled before this change still show as Cancelled
   - **Payments** – Cash (amount tendered and change), Card (card type, last 4 digits only, approval code), HMO (provider, LOA no.), plus e-wallet and bank transfer. Patient payments reduce the patient balance; HMO payments settle the HMO's approved coverage. A bill is Paid once both are settled.
   - **Balances** – each bill shows the patient balance, HMO outstanding and total outstanding, plus what the patient owes across all their bills. The bills list shows totals outstanding from patients and from HMOs, and a **Show: Outstanding** filter.
   - **Billing breakdown** – itemized charges grouped by category (room & board, professional fees, procedures, medicines, laboratory & diagnostics, other), then discounts, VAT and HMO coverage down to the amount due and balance. Adjusted per bill on the **Discounts / Tax / HMO** tab:
@@ -33,6 +33,23 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 |----------|----------|-----------------|
 | admin    | admin    | Administrator   |
 | nurse    | nurse    | Nurse           |
+
+### What each role can do
+
+The signed-in user is shown at the top of the sidebar (amber badge for administrators, teal for nurses),
+and the dashboard opens with a banner naming the view.
+
+| | Administrator | Nurse |
+|---|---|---|
+| Dashboard | everything, plus an **Outstanding** balances card and billing alerts | clinical cards and alerts only |
+| Patients | register, edit, deactivate / reactivate | register, edit |
+| Doctors | add, edit, change duty, deactivate / reactivate | view only |
+| Appointments, Admissions (incl. waiting list) | full | full |
+| Billing | create bills, add / remove charges, discounts / VAT / HMO, record payments, charge schedule | view bills and breakdown, print statements, add charges |
+| Activity Log | yes | hidden |
+
+Permissions are defined once in `Data/Permissions.cs`. The screens hide what a role can't do, and the data layer
+refuses it as well; every refused attempt is written to the activity log as "Access Denied".
 
 ## Requirements
 

@@ -697,6 +697,7 @@ namespace HospitalSystem.Data
 
         public static void ActivatePatient(Patient p)
         {
+            Permissions.Demand(Permission.DeactivatePatients, "reactivate patient records");
             p.Status = "Active";
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand("UPDATE patients SET status=@status WHERE id=@id", conn))
@@ -710,6 +711,7 @@ namespace HospitalSystem.Data
         }
         public static void DeletePatient(Patient p)
         {
+            Permissions.Demand(Permission.DeactivatePatients, "deactivate patient records");
             if (p == null) return;
 
             p.Status = "Inactive";
@@ -959,30 +961,22 @@ namespace HospitalSystem.Data
             SyncAdmissionBillOnDischarge(a);
         }
 
-        public static void CancelAdmission(Admission a)
+        // Admissions can't be cancelled; an admitted patient leaves only by discharge. A patient
+        // still on the waiting list (no bed, no bill yet) can be taken off it, e.g. if they go elsewhere.
+        public static void RemoveFromWaitingList(Admission a)
         {
-            bool wasPending = a.IsPending;
-            a.Cancel();
+            a.RemoveFromWaitingList();
 
             using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE admissions SET status=@status WHERE id=@id", conn))
             {
-                using (var cmd = new MySqlCommand("UPDATE admissions SET status=@status WHERE id=@id", conn))
-                {
-                    cmd.Parameters.AddWithValue("@status", a.Status);
-                    cmd.Parameters.AddWithValue("@id", a.Id);
-                    cmd.ExecuteNonQuery();
-                }
-
-                if (a.BedId > 0)
-                    SetBedOccupied(a.BedId, false, conn);
+                cmd.Parameters.AddWithValue("@status", a.Status);
+                cmd.Parameters.AddWithValue("@id", a.Id);
+                cmd.ExecuteNonQuery();
             }
 
-            LogActivity("Admissions", "Cancelled", wasPending
-                ? $"Removed {PatientName(a.PatientId)} from the admission waiting list ({a.AdmissionNo})"
-                : $"Cancelled admission {a.AdmissionNo} for {PatientName(a.PatientId)}", "❌");
-
-            // Admission status change feeds billing: void the auto bill for a mistaken admission.
-            CancelAdmissionBill(a);
+            LogActivity("Admissions", "Removed from Waiting List",
+                $"Removed {PatientName(a.PatientId)} from the admission waiting list ({a.AdmissionNo})", "❌");
         }
 
         public static List<Admission> ActiveAdmissions() => Admissions.Where(a => a.Status == "Active").ToList();
@@ -1168,27 +1162,9 @@ namespace HospitalSystem.Data
             }
         }
 
-        // A mistaken admission that is cancelled should not leave an orphan bill behind.
-        // Only voids an open bill with no payments (CancelBill guards the rest).
-        public static void CancelAdmissionBill(Admission admission)
-        {
-            if (admission == null) return;
-
-            var bill = OpenBillForAdmission(admission.Id);
-            if (bill == null || bill.AmountPaid > 0) return;
-
-            try
-            {
-                CancelBill(bill);
-            }
-            catch (Exception)
-            {
-                // Cancellation of the admission already succeeded; ignore billing hiccups.
-            }
-        }
-
         public static void AddBillItem(Bill b, BillItem item)
         {
+            Permissions.Demand(Permission.AddBillCharges, "add charges to bills");
             b.AddItem(item);
 
             using (var conn = Db.OpenConnection())
@@ -1204,6 +1180,7 @@ namespace HospitalSystem.Data
 
         public static void RemoveBillItem(Bill b, int itemId)
         {
+            Permissions.Demand(Permission.RemoveBillCharges, "remove charges from bills");
             var item = b.Items.FirstOrDefault(i => i.Id == itemId);
             b.RemoveItem(itemId);
 
@@ -1224,6 +1201,7 @@ namespace HospitalSystem.Data
 
         public static void RecordPayment(Bill b, Payment p)
         {
+            Permissions.Demand(Permission.RecordPayments, "record payments");
             if (p.PaymentDate == default)
                 p.PaymentDate = DateTime.Now;
             p.ReceivedBy = CurrentUser != null ? CurrentUser.DisplayName : null;
@@ -1262,21 +1240,6 @@ namespace HospitalSystem.Data
                 $". Patient balance {b.Balance:N2}" + (b.HmoBalance > 0 ? $", HMO outstanding {b.HmoBalance:N2}" : ""), "💰");
         }
 
-        public static void CancelBill(Bill b)
-        {
-            b.MarkAsCancelled();
-
-            using (var conn = Db.OpenConnection())
-            using (var cmd = new MySqlCommand("UPDATE bills SET status=@status WHERE id=@id", conn))
-            {
-                cmd.Parameters.AddWithValue("@status", b.Status.ToString());
-                cmd.Parameters.AddWithValue("@id", b.Id);
-                cmd.ExecuteNonQuery();
-            }
-
-            LogActivity("Billing", "Cancelled", $"Cancelled bill {b.BillNo} for {PatientName(b.PatientId)}", "❌");
-        }
-
         private static void InsertBillItem(BillItem item, MySqlConnection conn, MySqlTransaction tx)
         {
             using (var cmd = new MySqlCommand(
@@ -1297,6 +1260,7 @@ namespace HospitalSystem.Data
         // Replaces a bill's discount, senior citizen/PWD discount, VAT rate and HMO coverage.
         public static void UpdateBillAdjustments(Bill b, BillAdjustments adj)
         {
+            Permissions.Demand(Permission.AdjustBills, "apply discounts, VAT or HMO coverage");
             b.ApplyAdjustments(adj);
 
             using (var conn = Db.OpenConnection())
@@ -1355,6 +1319,7 @@ namespace HospitalSystem.Data
 
         public static ChargeSchedule AddChargeSchedule(ChargeSchedule c)
         {
+            Permissions.Demand(Permission.ManageChargeSchedule, "change the admission charge schedule");
             c.IsActive = true;
 
             using (var conn = Db.OpenConnection())
@@ -1374,6 +1339,7 @@ namespace HospitalSystem.Data
         // Only affects bills generated from now on; existing bills keep the price they were issued with.
         public static void UpdateChargeSchedule(ChargeSchedule c)
         {
+            Permissions.Demand(Permission.ManageChargeSchedule, "change the admission charge schedule");
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand(
                 "UPDATE charge_schedules SET description=@description, category=@category, unit_price=@unitPrice, " +
@@ -1424,6 +1390,7 @@ namespace HospitalSystem.Data
 
         public static Doctor AddDoctor(Doctor d)
         {
+            Permissions.Demand(Permission.ManageDoctors, "add doctors");
             d.Status = "Active";
 
             using (var conn = Db.OpenConnection())
@@ -1450,6 +1417,7 @@ namespace HospitalSystem.Data
 
         public static void UpdateDoctor(Doctor d)
         {
+            Permissions.Demand(Permission.ManageDoctors, "edit doctor records");
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand(
                 "UPDATE doctors SET full_name=@fullName, department_id=@departmentId, specialization=@specialization, " +
@@ -1474,6 +1442,7 @@ namespace HospitalSystem.Data
         // takes the doctor off duty and records why; the reason is kept while inactive.
         public static void DeactivateDoctor(Doctor d, string reason)
         {
+            Permissions.Demand(Permission.ManageDoctors, "deactivate doctors");
             d.Status = "Inactive";
             d.DeactivationReason = reason;
             d.IsOnDuty = false;
@@ -1493,6 +1462,7 @@ namespace HospitalSystem.Data
 
         public static void ActivateDoctor(Doctor d)
         {
+            Permissions.Demand(Permission.ManageDoctors, "reactivate doctors");
             d.Status = "Active";
             d.DeactivationReason = null;
 
@@ -1581,6 +1551,7 @@ namespace HospitalSystem.Data
         // Newest first. Every filter is optional; limit keeps a huge log from freezing the grid.
         public static List<ActivityItem> QueryActivityLog(DateTime? from, DateTime? to, string module, string username, string search, int limit)
         {
+            Permissions.Demand(Permission.ViewActivityLog, "view the activity log");
             var sql = new System.Text.StringBuilder(
                 "SELECT id, module, action, description, icon, created_at, username FROM activity_log WHERE 1=1");
             var cmd = new MySqlCommand();

@@ -119,6 +119,7 @@
     <Compile Include="Data\DesignTimeHelper.cs" />
     <Compile Include="Data\HospitalData.cs" />
     <Compile Include="Data\AlertMonitor.cs" />
+    <Compile Include="Data\Permissions.cs" />
     <Compile Include="Forms\LoginForm.cs">
       <SubType>Form</SubType>
     </Compile>

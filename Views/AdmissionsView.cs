@@ -13,7 +13,7 @@ namespace HospitalSystem.Views
         private DataGridView gridBeds;
         private ComboBox cmbPatient, cmbDoctor, cmbBed;
         private TextBox txtDiagnosis;
-        private Button btnAdmit, btnDischarge, btnCancelAdmission;
+        private Button btnAdmit, btnDischarge, btnRemoveFromWaitlist;
         private Panel formPanel;
         private Label title;
         private Label lblP;
@@ -56,12 +56,14 @@ namespace HospitalSystem.Views
         // Built in code (not InitializeComponent) for the same reason as WireEvents().
         private void BuildExtraButtons()
         {
-            btnCancelAdmission = new Button();
-            btnCancelAdmission.Text = "Cancel Admission";
-            btnCancelAdmission.Location = new Point(670, 10);
-            btnCancelAdmission.Size = new Size(130, 30);
-            btnCancelAdmission.Click += BtnCancelAdmission_Click;
-            formPanel.Controls.Add(btnCancelAdmission);
+            // Admissions can't be cancelled (admitted patients are discharged); only a patient
+            // still waiting for a bed can be taken off the waiting list.
+            btnRemoveFromWaitlist = new Button();
+            btnRemoveFromWaitlist.Text = "Remove from Waiting List";
+            btnRemoveFromWaitlist.Location = new Point(650, 10);
+            btnRemoveFromWaitlist.Size = new Size(150, 30);
+            btnRemoveFromWaitlist.Click += BtnRemoveFromWaitlist_Click;
+            formPanel.Controls.Add(btnRemoveFromWaitlist);
 
             // Waiting list: admit without a bed when none is free, assign one later.
             formPanel.Height = 215;
@@ -140,6 +142,7 @@ namespace HospitalSystem.Views
 
             double rate = total == 0 ? 0 : (double)occupied / total * 100;
             btnAssignBed.Enabled = available > 0 && waiting > 0;
+            btnRemoveFromWaitlist.Enabled = waiting > 0;
 
             if (available == 0)
             {
@@ -618,31 +621,24 @@ namespace HospitalSystem.Views
             }
         }
 
-        private void BtnCancelAdmission_Click(object sender, EventArgs e)
+        private void BtnRemoveFromWaitlist_Click(object sender, EventArgs e)
         {
-            if (gridAdmissions.CurrentRow == null) return;
-            int id = Convert.ToInt32(gridAdmissions.CurrentRow.Cells["Id"].Value);
-            var adm = HospitalData.Admissions.FirstOrDefault(a => a.Id == id);
-            if (adm == null) return;
-
-            if (!adm.IsActive && !adm.IsPending)
+            var adm = GetSelectedAdmission();
+            if (adm == null || !adm.IsPending)
             {
-                MessageBox.Show("Only active or pending admissions can be cancelled.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("Select a patient on the waiting list (status Pending). Admitted patients are discharged instead.",
+                    "Remove from Waiting List", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            string question = adm.IsPending
-                ? "Remove " + HospitalData.PatientName(adm.PatientId) + " from the waiting list?"
-                : "Cancel this admission? Use this only for admissions entered by mistake: " +
-                  "the bed is freed and no stay is recorded.";
-            if (MessageBox.Show(question, "Confirm Cancel",
-                MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
-            {
-                HospitalData.CancelAdmission(adm);
-                LoadCombos();
-                LoadAdmissions();
-                LoadBeds();
-            }
+            if (MessageBox.Show("Remove " + HospitalData.PatientName(adm.PatientId) + " from the waiting list?",
+                "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
+                return;
+
+            HospitalData.RemoveFromWaitingList(adm);
+            LoadCombos();
+            LoadAdmissions();
+            LoadBeds();
         }
     }
 }

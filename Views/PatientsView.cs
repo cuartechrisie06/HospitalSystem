@@ -37,7 +37,12 @@ namespace HospitalSystem.Views
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
+            {
+                // Nurses register and edit patients; deactivating records is for administrators.
+                if (grid.Columns["colToggle"] != null)
+                    grid.Columns["colToggle"].Visible = Permissions.Can(Permission.DeactivatePatients);
                 LoadPatients("");
+            }
         }
 
         // Deliberately kept OUT of InitializeComponent(): the WinForms Designer
@@ -755,8 +760,8 @@ namespace HospitalSystem.Views
                 btnCancel.Click += (s, e) => this.Close();
                 this.Controls.Add(btnCancel);
 
-                // Deactivate button – only when editing existing patient
-                if (existing != null)
+                // Deactivate button – only when editing an existing patient, for roles allowed to
+                if (existing != null && Permissions.Can(Permission.DeactivatePatients))
                 {
                     Button btnDeactivate = new Button();
                     btnDeactivate.Text = "Deactivate";

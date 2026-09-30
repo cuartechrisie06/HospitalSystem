@@ -16,7 +16,7 @@ namespace HospitalSystem.Views
         private ComboBox cmbPatient, cmbAdmission, cmbAppointment, cmbFilter;
         private CheckBox chkAutoCharges;
         private TextBox txtNotes;
-        private Button btnCreate, btnCancelBill;
+        private Button btnCreate;
         private Label lblBills;
         private DataGridView gridBills;
 
@@ -41,6 +41,9 @@ namespace HospitalSystem.Views
         private TextBox txtCardLast4, txtApprovalCode, txtPayHmoProvider, txtPayHmoLoa;
 
         private TabControl tabsSummary;
+        private Panel createPanel, paymentEntry;
+        private Button scheduleButton;
+        private TabPage adjustmentsTab;
         private DataGridView gridBreakdown;
         private Button btnPrintStatement;
         private readonly Font breakdownBold = new Font("Segoe UI", 9F, FontStyle.Bold);
@@ -61,8 +64,56 @@ namespace HospitalSystem.Views
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
             {
+                ApplyPermissions();
                 LoadPatients();
                 LoadBills();
+            }
+        }
+
+        // Nurses view bills, print statements and add charges for what the patient used;
+        // creating bills, removing charges, discounts/VAT/HMO, payments and the charge schedule are
+        // administrator work. Hidden here, and refused by HospitalData if reached anyway.
+        private void ApplyPermissions()
+        {
+            createPanel.Visible = Permissions.Can(Permission.CreateBills);
+            scheduleButton.Visible = Permissions.Can(Permission.ManageChargeSchedule);
+            btnAddItem.Visible = Permissions.Can(Permission.AddBillCharges);
+            btnRemoveItem.Visible = Permissions.Can(Permission.RemoveBillCharges);
+            if (!Permissions.Can(Permission.AdjustBills))
+                tabsSummary.TabPages.Remove(adjustmentsTab);
+
+            if (!Permissions.Can(Permission.RecordPayments))
+            {
+                paymentEntry.Controls.Clear();
+                paymentEntry.Height = 30;
+                paymentEntry.Controls.Add(new Label
+                {
+                    Text = "Payments are recorded by an administrator.",
+                    Dock = DockStyle.Fill,
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Font = new Font("Segoe UI", 9F, FontStyle.Italic),
+                    ForeColor = Color.FromArgb(107, 114, 128)
+                });
+            }
+
+            if (!createPanel.Visible)
+            {
+                // Where the Create Bill form would be, say what this role can do here.
+                var notice = new Label
+                {
+                    Text = "Nurse access: view bills and their breakdown, print statements, and add charges " +
+                           "(medicines, laboratory, procedures, supplies). Payments, discounts and VAT/HMO " +
+                           "are handled by an administrator. Admission bills are created automatically.",
+                    Dock = DockStyle.Top,
+                    Height = 44,
+                    Padding = new Padding(10, 0, 10, 0),
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    BackColor = Color.FromArgb(240, 253, 250),
+                    ForeColor = Color.FromArgb(15, 118, 110),
+                    Font = new Font("Segoe UI", 9F)
+                };
+                Controls.Add(notice);
+                notice.SendToBack();   // docks first: at the very top
             }
         }
 
@@ -73,7 +124,7 @@ namespace HospitalSystem.Views
             this.Padding = new Padding(10);
 
             // ===== Top form: create bill =====
-            Panel formPanel = new Panel();
+            Panel formPanel = createPanel = new Panel();
             formPanel.Dock = DockStyle.Top;
             formPanel.Height = 145;
             formPanel.BackColor = Color.White;
@@ -147,16 +198,9 @@ namespace HospitalSystem.Views
             btnPanel.Height = 40;
             this.Controls.Add(btnPanel);
 
-            btnCancelBill = new Button();
-            btnCancelBill.Text = "Cancel Selected Bill";
-            btnCancelBill.Location = new Point(0, 5);
-            btnCancelBill.Size = new Size(150, 30);
-            btnCancelBill.Click += BtnCancelBill_Click;
-            btnPanel.Controls.Add(btnCancelBill);
-
-            btnPanel.Controls.Add(MakeLabel("Show:", 170, 12));
+            btnPanel.Controls.Add(MakeLabel("Show:", 0, 12));
             cmbFilter = new ComboBox();
-            cmbFilter.Location = new Point(212, 8);
+            cmbFilter.Location = new Point(42, 8);
             cmbFilter.Size = new Size(130, 28);
             cmbFilter.DropDownStyle = ComboBoxStyle.DropDownList;
             cmbFilter.Items.Add(AllStatuses);
@@ -167,9 +211,9 @@ namespace HospitalSystem.Views
             cmbFilter.SelectedIndexChanged += (s, e) => LoadBills();
             btnPanel.Controls.Add(cmbFilter);
 
-            Button btnSchedule = new Button();
+            Button btnSchedule = scheduleButton = new Button();
             btnSchedule.Text = "Admission Charge Schedule...";
-            btnSchedule.Location = new Point(360, 5);
+            btnSchedule.Location = new Point(190, 5);
             btnSchedule.Size = new Size(190, 30);
             btnSchedule.Click += (s, e) =>
             {
@@ -198,6 +242,14 @@ namespace HospitalSystem.Views
 
             detail.Controls.Add(BuildItemsPanel(), 0, 0);
             detail.Controls.Add(BuildSummaryTabs(), 1, 0);
+
+            // Top-docked controls stack in reverse z-order (the back-most docks first, at the top).
+            // Each SendToBack below lands behind the previous one, so the last one sent ends up
+            // highest: Create Bill form, "Bills" header, button row, bills grid, then the detail fill.
+            gridBills.SendToBack();
+            btnPanel.SendToBack();
+            lblBills.SendToBack();
+            formPanel.SendToBack();
         }
 
         // Right-hand side: breakdown of the selected bill, its adjustments, and payments.
@@ -211,7 +263,7 @@ namespace HospitalSystem.Views
             breakdownPage.Controls.Add(BuildBreakdownPanel());
             tabsSummary.TabPages.Add(breakdownPage);
 
-            TabPage adjustmentsPage = new TabPage("Discounts / Tax / HMO");
+            TabPage adjustmentsPage = adjustmentsTab = new TabPage("Discounts / Tax / HMO");
             adjustmentsPage.Controls.Add(BuildAdjustmentsPanel());
             tabsSummary.TabPages.Add(adjustmentsPage);
 
@@ -446,7 +498,7 @@ namespace HospitalSystem.Views
             lblPatientOutstanding.ForeColor = Color.FromArgb(180, 83, 9);
             summary.Controls.Add(lblPatientOutstanding);
 
-            Panel entry = new Panel();
+            Panel entry = paymentEntry = new Panel();
             entry.Dock = DockStyle.Top;
             entry.Height = 140;
             panel.Controls.Add(entry);
@@ -718,7 +770,9 @@ namespace HospitalSystem.Views
             loading = false;
 
             decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
-            lblBills.Text = "Bills    Outstanding - patients: " + Money(patientsOwe) + "   HMO: " + Money(hmosOwe) +
+            // Hospital-wide totals are for administrators; everyone sees each bill's own balance.
+            lblBills.Text = !Permissions.Can(Permission.ViewFinancials) ? "Bills" :
+                "Bills    Outstanding - patients: " + Money(patientsOwe) + "   HMO: " + Money(hmosOwe) +
                             "   Total: " + Money(patientsOwe + hmosOwe);
             LoadDetail();
         }
@@ -781,7 +835,6 @@ namespace HospitalSystem.Views
             btnAddItem.Enabled = editable;
             btnRemoveItem.Enabled = editable;
             btnPay.Enabled = editable && bill.TotalOutstanding > 0;
-            btnCancelBill.Enabled = editable;
             btnApplyAdjustments.Enabled = editable;
             btnPrintStatement.Enabled = bill != null;
 
@@ -916,7 +969,7 @@ namespace HospitalSystem.Views
             if (existing != null)
             {
                 MessageBox.Show("That admission / appointment is already billed on " + existing.BillNo +
-                    ". Add items to that bill instead, or cancel it first.", "Already Billed",
+                    ". Add items to that bill instead.", "Already Billed",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 LoadBills(existing.Id);
                 return;
@@ -946,25 +999,6 @@ namespace HospitalSystem.Views
             txtNotes.Clear();
             cmbFilter.SelectedIndex = 0;   // make sure the new bill is visible
             LoadBills(bill.Id);
-        }
-
-        private void BtnCancelBill_Click(object sender, EventArgs e)
-        {
-            var bill = GetSelectedBill();
-            if (bill == null) return;
-
-            if (MessageBox.Show("Cancel bill " + bill.BillNo + "?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
-                return;
-
-            try
-            {
-                HospitalData.CancelBill(bill);
-                LoadBills(bill.Id);
-            }
-            catch (InvalidOperationException ex)
-            {
-                MessageBox.Show(ex.Message, "Cannot Cancel", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            }
         }
 
         private void BtnAddItem_Click(object sender, EventArgs e)

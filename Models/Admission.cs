@@ -13,7 +13,7 @@ namespace HospitalSystem.Models
         public DateTime? DischargedOn { get; set; }
         public string Diagnosis { get; set; }
         public string Notes { get; set; }
-        public string Status { get; set; }   // Pending / Active / Discharged / Cancelled
+        public string Status { get; set; }   // Pending / Active / Discharged / Cancelled (removed from waiting list)
 
         public string AdmissionNo
         {
@@ -53,12 +53,13 @@ namespace HospitalSystem.Models
             Status = "Discharged";
         }
 
-        // For admissions entered by mistake, or a patient who leaves the waiting list.
-        // Unlike a discharge, no stay is recorded.
-        public void Cancel()
+        // A patient who leaves the waiting list before getting a bed (no stay, no bill).
+        // Admitted patients can't be cancelled, only discharged. The stored status stays
+        // "Cancelled" so admissions cancelled before this change read the same way.
+        public void RemoveFromWaitingList()
         {
-            if (!IsActive && !IsPending)
-                throw new InvalidOperationException("Only an active or pending admission can be cancelled.");
+            if (!IsPending)
+                throw new InvalidOperationException("Only a patient on the waiting list can be removed. Admitted patients are discharged instead.");
 
             Status = "Cancelled";
         }

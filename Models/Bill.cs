@@ -349,16 +349,6 @@ namespace HospitalSystem.Models
             Status = BillStatus.Paid;
         }
 
-        public void MarkAsCancelled()
-        {
-            if (Status == BillStatus.Cancelled)
-                throw new InvalidOperationException("This bill is already cancelled.");
-            if (AmountPaid > 0)
-                throw new InvalidOperationException("A bill with recorded payments cannot be cancelled.");
-
-            Status = BillStatus.Cancelled;
-        }
-
         // Paid once both the patient's share and the HMO's share are settled.
         // A bill with no items yet is not considered paid.
         public bool IsFullyPaid()

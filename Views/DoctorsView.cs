@@ -34,7 +34,32 @@ namespace HospitalSystem.Views
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
+            {
+                ApplyPermissions();
                 LoadDoctors("");
+            }
+        }
+
+        // Doctor records are maintained by administrators; nurses get a read-only list.
+        private void ApplyPermissions()
+        {
+            bool manage = Permissions.Can(Permission.ManageDoctors);
+            btnNew.Visible = manage;
+            if (grid.Columns["colEdit"] != null) grid.Columns["colEdit"].Visible = manage;
+            if (grid.Columns["colAction"] != null) grid.Columns["colAction"].Visible = manage;
+
+            if (!manage)
+            {
+                btnNew.Parent.Controls.Add(new Label
+                {
+                    Text = "View only — doctor records are managed by administrators",
+                    Location = new Point(btnNew.Left, btnNew.Top + 8),
+                    AutoSize = true,
+                    Font = new Font("Segoe UI", 8.5F, FontStyle.Italic),
+                    ForeColor = Color.FromArgb(107, 114, 128)
+                });
+                chkShowInactive.Left = btnNew.Left + 340;
+            }
         }
 
         // Deliberately kept OUT of InitializeComponent(): the WinForms Designer
@@ -693,7 +718,8 @@ namespace HospitalSystem.Views
                 btnEdit.FlatAppearance.BorderSize = 0;
                 btnEdit.Cursor = Cursors.Hand;
                 btnEdit.Click += (s, e) => { EditRequested = true; this.Close(); };
-                footer.Controls.Add(btnEdit);
+                if (Permissions.Can(Permission.ManageDoctors))
+                    footer.Controls.Add(btnEdit);
 
                 Button btnClose = new Button();
                 btnClose.Text = "Close";

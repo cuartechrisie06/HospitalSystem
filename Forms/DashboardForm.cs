@@ -12,7 +12,10 @@ namespace HospitalSystem.Forms
     {
         private Panel panelSidebar;
         private Panel panelContent;
-        private Label lblUser;
+        private Panel panelProfile;
+        private Label lblProfileName, lblProfileRole;
+        private string profileInitials = "";
+        private Color profileRoleColor = Color.Gray;
         private Button btnDashboard;
         private Button btnPatients;
         private Button btnDoctors;
@@ -45,34 +48,42 @@ namespace HospitalSystem.Forms
         // Kept out of InitializeComponent(): the Designer's InitializeComponent
         // parser only understands flat control-creation statements, not calls
         // into custom factory methods.
+        // Layout of the sidebar, top to bottom: brand (0-60), user profile (60-138),
+        // then the nav buttons from NavTop, one every NavStep px (42px button + 8px gap).
+        private const int ProfileTop = 60, ProfileHeight = 78;
+        private const int NavTop = 146, NavStep = 50;
+
         private void BuildSidebarNav()
         {
-            btnDashboard = CreateNavButton("Dashboard", 70);
+            BuildProfilePanel();
+
+            btnDashboard = CreateNavButton("Dashboard", NavTop);
             btnDashboard.Click += BtnDashboard_Click;
             panelSidebar.Controls.Add(btnDashboard);
 
-            btnPatients = CreateNavButton("Patients", 120);
+            btnPatients = CreateNavButton("Patients", NavTop + NavStep);
             btnPatients.Click += BtnPatients_Click;
             panelSidebar.Controls.Add(btnPatients);
 
-            btnDoctors = CreateNavButton("Doctors", 170);
+            btnDoctors = CreateNavButton("Doctors", NavTop + NavStep * 2);
             btnDoctors.Click += BtnDoctors_Click;
             panelSidebar.Controls.Add(btnDoctors);
 
-            btnAppointments = CreateNavButton("Appointments", 220);
+            btnAppointments = CreateNavButton("Appointments", NavTop + NavStep * 3);
             btnAppointments.Click += BtnAppointments_Click;
             panelSidebar.Controls.Add(btnAppointments);
 
-            btnAdmissions = CreateNavButton("Admissions", 270);
+            btnAdmissions = CreateNavButton("Admissions", NavTop + NavStep * 4);
             btnAdmissions.Click += BtnAdmissions_Click;
             panelSidebar.Controls.Add(btnAdmissions);
 
-            btnBilling = CreateNavButton("Billing", 320);
+            btnBilling = CreateNavButton("Billing", NavTop + NavStep * 5);
             btnBilling.Click += BtnBilling_Click;
             panelSidebar.Controls.Add(btnBilling);
 
             // Administrators only; shown/hidden by ApplyUserAccess() on every sign-in.
-            btnActivityLog = CreateNavButton("Activity Log", 370);
+            // Last in the list, so hiding it never leaves a gap.
+            btnActivityLog = CreateNavButton("Activity Log", NavTop + NavStep * 6);
             btnActivityLog.Click += BtnActivityLog_Click;
             btnActivityLog.Visible = false;
             panelSidebar.Controls.Add(btnActivityLog);
@@ -80,33 +91,79 @@ namespace HospitalSystem.Forms
             AddSidebarSeparators();
         }
 
+        // Signed-in user at the top of the sidebar: initials avatar, name, and a role badge
+        // (amber for administrators, teal for nurses) so it's always clear whose view this is.
+        private void BuildProfilePanel()
+        {
+            panelProfile = new Panel();
+            panelProfile.Location = new Point(0, ProfileTop);
+            panelProfile.Size = new Size(panelSidebar.Width, ProfileHeight);
+            panelProfile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+            panelProfile.BackColor = Color.FromArgb(37, 64, 150);
+            panelProfile.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                var circle = new Rectangle(16, 17, 44, 44);
+                using (var fill = new SolidBrush(profileRoleColor))
+                    g.FillEllipse(fill, circle);
+                using (var font = new Font("Segoe UI", 12F, FontStyle.Bold))
+                using (var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                    g.DrawString(profileInitials, font, Brushes.White, circle, center);
+            };
+            panelSidebar.Controls.Add(panelProfile);
+
+            lblProfileName = new Label();
+            lblProfileName.Location = new Point(70, 16);
+            lblProfileName.Size = new Size(panelSidebar.Width - 80, 22);
+            lblProfileName.AutoEllipsis = true;
+            lblProfileName.ForeColor = Color.White;
+            lblProfileName.BackColor = Color.Transparent;
+            lblProfileName.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            panelProfile.Controls.Add(lblProfileName);
+
+            lblProfileRole = new Label();
+            lblProfileRole.Location = new Point(70, 42);
+            lblProfileRole.AutoSize = true;
+            lblProfileRole.Padding = new Padding(6, 2, 6, 2);
+            lblProfileRole.ForeColor = Color.White;
+            lblProfileRole.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
+            panelProfile.Controls.Add(lblProfileRole);
+        }
+
+        private static string Initials(string name)
+        {
+            var parts = (name ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return "?";
+            return parts.Length == 1
+                ? parts[0].Substring(0, 1).ToUpper()
+                : (parts[0].Substring(0, 1) + parts[parts.Length - 1].Substring(0, 1)).ToUpper();
+        }
+
         // Thin divider lines in the sidebar.
         // Purely decorative: these are 1px panels layered into the existing gaps,
         // so no button position, click handler or data path is touched.
         private void AddSidebarSeparators()
         {
-            // under the "Hospital System" title (title ends at 60, first button starts at 70)
-            panelSidebar.Controls.Add(CreateSeparator(64, true));
+            // under the user profile, above the first nav button
+            panelSidebar.Controls.Add(CreateSeparator(NavTop - 5, true));
 
             // between the nav buttons - each is 42px tall with an 8px gap after it
-            panelSidebar.Controls.Add(CreateSeparator(116, false));
-            panelSidebar.Controls.Add(CreateSeparator(166, false));
-            panelSidebar.Controls.Add(CreateSeparator(216, false));
-            panelSidebar.Controls.Add(CreateSeparator(266, false));
-            panelSidebar.Controls.Add(CreateSeparator(316, false));
+            for (int i = 1; i <= 5; i++)
+                panelSidebar.Controls.Add(CreateSeparator(NavTop + NavStep * i - 4, false));
 
-            sepActivityLog = CreateSeparator(366, false);
+            sepActivityLog = CreateSeparator(NavTop + NavStep * 6 - 4, false);
             sepActivityLog.Visible = false;
             panelSidebar.Controls.Add(sepActivityLog);
 
-            // above the user / sign-out block pinned at the bottom
+            // above the sign-out button pinned at the bottom
             Panel bottomLine = new Panel();
             bottomLine.Height = 1;
             bottomLine.Dock = DockStyle.Bottom;
             bottomLine.BackColor = Color.FromArgb(78, 115, 205);
             panelSidebar.Controls.Add(bottomLine);
 
-            // dock last so it lands above lblUser and btnSignOut, not below them
+            // dock last so it lands above btnSignOut, not below it
             bottomLine.BringToFront();
         }
 
@@ -128,11 +185,17 @@ namespace HospitalSystem.Forms
         private void ApplyUserAccess()
         {
             var user = HospitalData.CurrentUser;
-            lblUser.Text = user != null ? user.DisplayName + "\n" + user.Role : "User";
-
             bool admin = HospitalData.IsAdmin;
-            btnActivityLog.Visible = admin;
-            sepActivityLog.Visible = admin;
+
+            lblProfileName.Text = user != null ? user.DisplayName : "Not signed in";
+            lblProfileRole.Text = user != null ? user.Role : "";
+            profileRoleColor = admin ? Color.FromArgb(217, 119, 6) : Color.FromArgb(13, 148, 136);
+            lblProfileRole.BackColor = profileRoleColor;
+            profileInitials = Initials(user != null ? user.DisplayName : null);
+            panelProfile.Invalidate();
+
+            btnActivityLog.Visible = Permissions.Can(Permission.ViewActivityLog);
+            sepActivityLog.Visible = btnActivityLog.Visible;
         }
 
         private void DashboardForm_Load(object sender, EventArgs e)
@@ -207,15 +270,6 @@ namespace HospitalSystem.Forms
             btnSignOut.Click += BtnSignOut_Click;
             panelSidebar.Controls.Add(btnSignOut);
 
-            lblUser = new Label();
-            lblUser.Dock = DockStyle.Bottom;
-            lblUser.Height = 44;
-            lblUser.ForeColor = Color.LightGray;
-            lblUser.Font = new Font("Segoe UI", 9F);
-            lblUser.TextAlign = ContentAlignment.MiddleCenter;
-            lblUser.Text = "User";
-            panelSidebar.Controls.Add(lblUser);
-
             // ===== Content area =====
             panelContent = new Panel();
             panelContent.Dock = DockStyle.Fill;
@@ -244,15 +298,12 @@ namespace HospitalSystem.Forms
             overview.BackColor = Color.FromArgb(243, 244, 246);
             overview.AutoScroll = true;
 
-            // ===== 1. Summary cards =====
-            var tlTop = new TableLayoutPanel();
-            tlTop.Dock = DockStyle.Top;
-            tlTop.Height = 112;
-            tlTop.ColumnCount = 5;
-            tlTop.RowCount = 1;
-            for (int i = 0; i < 5; i++)
-                tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
+            bool seesFinancials = Permissions.Can(Permission.ViewFinancials);
 
+            // ===== 0. Whose view this is =====
+            var banner = BuildRoleBanner(seesFinancials);
+
+            // ===== 1. Summary cards (administrators also get the money owed to the hospital) =====
             int occupied = HospitalData.OccupiedBedsCount();
             int totalBeds = HospitalData.TotalBedsCount();
             double rate = HospitalData.OccupancyRate();
@@ -260,22 +311,42 @@ namespace HospitalSystem.Forms
             int todayOpen = today.Count(a => a.IsOpen);
             int next7 = UpcomingAppointments().Count;
             var pending = HospitalData.PendingAdmissions();
-            var alerts = HospitalData.ActiveAlerts();
+            var alerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
             int highAlerts = alerts.Count(a => a.Severity == "High");
 
-            tlTop.Controls.Add(CreateSummaryCard("Appointments Today", today.Count.ToString(),
-                $"{todayOpen} still to see  •  {next7} in the next 7 days", Navy), 0, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Bed Occupancy", $"{occupied}/{totalBeds}",
-                $"{rate:0}% occupied  •  {totalBeds - occupied} free",
-                rate >= 100 ? Red : rate >= AlertMonitor.HighOccupancyRate * 100 ? Amber : Navy), 1, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Admitted Patients", HospitalData.ActiveAdmissions().Count.ToString(),
-                "currently in a bed", Navy), 2, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Pending Admissions", pending.Count.ToString(),
-                pending.Count == 0 ? "no one waiting for a bed" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
-                pending.Count == 0 ? Navy : Amber), 3, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Active Alerts", alerts.Count.ToString(),
-                alerts.Count == 0 ? "all clear" : $"{highAlerts} high priority",
-                highAlerts > 0 ? Red : alerts.Count > 0 ? Amber : Green), 4, 0);
+            var cards = new System.Collections.Generic.List<Panel>
+            {
+                CreateSummaryCard("Today's Visits", today.Count.ToString(),
+                    $"{todayOpen} to see  •  {next7} this week", Navy),
+                CreateSummaryCard("Bed Occupancy", $"{occupied}/{totalBeds}",
+                    $"{rate:0}% occupied  •  {totalBeds - occupied} free",
+                    rate >= 100 ? Red : rate >= AlertMonitor.HighOccupancyRate * 100 ? Amber : Navy),
+                CreateSummaryCard("Admitted Patients", HospitalData.ActiveAdmissions().Count.ToString(),
+                    "currently in a bed", Navy),
+                CreateSummaryCard("Pending Admissions", pending.Count.ToString(),
+                    pending.Count == 0 ? "no one waiting" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
+                    pending.Count == 0 ? Navy : Amber),
+                CreateSummaryCard("Active Alerts", alerts.Count.ToString(),
+                    alerts.Count == 0 ? "all clear" : $"{highAlerts} high priority",
+                    highAlerts > 0 ? Red : alerts.Count > 0 ? Amber : Green)
+            };
+            if (seesFinancials)
+            {
+                decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
+                cards.Add(CreateSummaryCard("Outstanding", (patientsOwe + hmosOwe).ToString("N0"),
+                    $"patients {patientsOwe:N0}  •  HMO {hmosOwe:N0}", patientsOwe + hmosOwe > 0 ? Amber : Green));
+            }
+
+            var tlTop = new TableLayoutPanel();
+            tlTop.Dock = DockStyle.Top;
+            tlTop.Height = 112;
+            tlTop.ColumnCount = cards.Count;
+            tlTop.RowCount = 1;
+            for (int i = 0; i < cards.Count; i++)
+            {
+                tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F / cards.Count));
+                tlTop.Controls.Add(cards[i], i, 0);
+            }
 
             // ===== 2. Alerts + Pending admissions =====
             var tlRow2 = MakeRow(240, 55F, 45F);
@@ -298,8 +369,56 @@ namespace HospitalSystem.Forms
             overview.Controls.Add(tlRow3);
             overview.Controls.Add(tlRow2);
             overview.Controls.Add(tlTop);
+            overview.Controls.Add(banner);
 
             ShowView(new HostView(overview));
+        }
+
+        // Billing alerts are about money owed to the hospital, which only administrators handle.
+        private static System.Collections.Generic.List<Alert> VisibleAlerts(System.Collections.Generic.List<Alert> alerts, bool seesFinancials)
+        {
+            return seesFinancials ? alerts : alerts.Where(a => a.Module != "Billing").ToList();
+        }
+
+        private Panel BuildRoleBanner(bool admin)
+        {
+            var user = HospitalData.CurrentUser;
+            int hour = DateTime.Now.Hour;
+            string greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+            Color accent = admin ? Color.FromArgb(217, 119, 6) : Color.FromArgb(13, 148, 136);
+
+            var banner = new Panel { Dock = DockStyle.Top, Height = 50, Padding = new Padding(5, 0, 5, 8) };
+            var inner = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+            inner.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(accent, 4))
+                    e.Graphics.DrawLine(pen, 1, 0, 1, inner.Height);
+            };
+
+            inner.Controls.Add(new Label
+            {
+                Text = admin
+                    ? "Administrator view  ·  full hospital overview, billing totals and the activity log"
+                    : "Nurse view  ·  clinical overview; billing totals, payments and admin tools are handled by administrators",
+                UseMnemonic = false,
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 9F),
+                ForeColor = Color.FromArgb(75, 85, 99)
+            });
+            inner.Controls.Add(new Label
+            {
+                Text = $"{greeting}, {(user != null ? user.DisplayName : "")}",
+                Dock = DockStyle.Left,
+                Width = 320,
+                Padding = new Padding(12, 0, 0, 0),
+                TextAlign = ContentAlignment.MiddleLeft,
+                Font = new Font("Segoe UI", 11F, FontStyle.Bold),
+                ForeColor = accent
+            });
+
+            banner.Controls.Add(inner);
+            return banner;
         }
 
         private static TableLayoutPanel MakeRow(int height, params float[] widths)
@@ -348,12 +467,14 @@ namespace HospitalSystem.Forms
         private Panel BuildAlertsCard(System.Collections.Generic.List<Alert> alerts)
         {
             var card = CreateCardPanel();
-            int acknowledged = HospitalData.AcknowledgedAlerts().Count;
+            int acknowledged = VisibleAlerts(HospitalData.AcknowledgedAlerts(), Permissions.Can(Permission.ViewFinancials)).Count;
             var title = MakeCardTitle("Alerts" + (acknowledged > 0 ? $"    ({acknowledged} acknowledged, still ongoing)" : ""), Red);
 
             var hint = new Label
             {
-                Text = "Raised automatically by the other modules; each clears itself once fixed.",
+                Text = Permissions.Can(Permission.ViewFinancials)
+                    ? "Raised automatically by the other modules; each clears itself once fixed."
+                    : "Clinical alerts, raised automatically; each clears itself once fixed.",
                 Dock = DockStyle.Top,
                 Height = 18,
                 Font = new Font("Segoe UI", 8F),
