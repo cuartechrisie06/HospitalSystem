@@ -59,6 +59,33 @@ namespace HospitalSystem.Models
             UpdateStatus();
         }
 
+        // Brings per-day charges (room, nursing...) in line with the length of stay.
+        // Bills created before items carried a per-day flag fall back to their room charge.
+        // Returns the items whose quantity changed.
+        public List<BillItem> SyncPerDayItems(int daysStayed)
+        {
+            var changed = new List<BillItem>();
+            if (Status == BillStatus.Cancelled) return changed;
+
+            var perDay = Items.Where(i => i.PerDay).ToList();
+            if (perDay.Count == 0)
+                perDay = Items.Where(i => i.Category == BillCategory.Room).Take(1).ToList();
+
+            foreach (var item in perDay.Where(i => i.Quantity != daysStayed))
+            {
+                item.UpdateQuantity(daysStayed);
+                changed.Add(item);
+            }
+
+            if (changed.Count > 0)
+            {
+                CalculateTotal();
+                CalculateBalance();
+                UpdateStatus();
+            }
+            return changed;
+        }
+
         public decimal CalculateTotal()
         {
             TotalAmount = Items.Sum(i => i.Amount);

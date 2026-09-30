@@ -433,14 +433,15 @@ namespace HospitalSystem.Views
                 Diagnosis = txtDiagnosis.Text.Trim()
             });
 
-            // Admit -> billing trigger: every admission opens a bill with its room charge.
+            // Admit -> billing trigger: every admission opens a bill from the pre-set charge schedule.
             string billMsg;
             try
             {
                 var bill = HospitalData.EnsureAdmissionBill(admission);
                 billMsg = bill != null
-                    ? $"\n\nBill {bill.BillNo} was created automatically (room charge total: {bill.TotalAmount:N2}). " +
-                      "Open Billing to add items or record payment."
+                    ? $"\n\nBill {bill.BillNo} was created automatically from the charge schedule " +
+                      $"({bill.Items.Count} item(s), {bill.TotalAmount:N2} so far). Per-day charges are " +
+                      "updated to the full stay on discharge. Open Billing to add items or record payment."
                     : "";
             }
             catch (MySql.Data.MySqlClient.MySqlException ex)
@@ -474,7 +475,12 @@ namespace HospitalSystem.Views
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
                 HospitalData.Discharge(adm);
-                MessageBox.Show("Patient discharged. Stay: " + adm.DaysStayed + " day(s).", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                var bill = HospitalData.OpenBillForAdmission(adm.Id);
+                string msg = "Patient discharged. Stay: " + adm.DaysStayed + " day(s).";
+                if (bill != null)
+                    msg += "\n\nBill " + bill.BillNo + " total: " + bill.TotalAmount.ToString("N2") +
+                           ", balance: " + bill.Balance.ToString("N2") + ".";
+                MessageBox.Show(msg, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 LoadCombos();
                 LoadAdmissions();
                 LoadBeds();

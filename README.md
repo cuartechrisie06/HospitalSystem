@@ -9,8 +9,9 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 - **Patients** – Register, search, update
 - **Doctors** – Doctor records (license number, credentials, specialization, contact) and duty status, with search; deactivate a doctor with a required reason (kept on the record) and reactivate later. "Show inactive" reveals deactivated doctors; inactive doctors are hidden from appointment/admission scheduling.
 - **Appointments** – Schedule from a searchable, click-to-select table of active patients (captures patient, department, doctor, reason, date & time), confirm, reschedule, mark completed, cancel (with basic double-booking protection). Deactivated patients and doctors cannot be scheduled — they are excluded from the pickers and re-checked at schedule time.
-- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge, cancel (for mistaken entries). Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (admitting is blocked when the hospital is full). Admission status changes feed billing: admitting opens a linked bill with room charges (admit → billing trigger), discharging finalizes the room charge to the actual length of stay, and cancelling a mistaken admission voids its unpaid bill.
+- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge, cancel (for mistaken entries). Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (admitting is blocked when the hospital is full). Admission status changes feed billing: admitting opens a linked bill from the pre-set admission charge schedule (admit → billing trigger), discharging finalizes all per-day charges to the actual length of stay, and cancelling a mistaken admission voids its unpaid bill.
 - **Billing** – Bills per patient (optionally linked to an admission or appointment; an admission's bill is created automatically on admit), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid / Cancelled)
+  - **Admission charge schedule** – the pre-set services billed on admission (admission fee, room rate per ward, nursing care, ICU monitoring, lab panel…), each one-time or per day and for all wards or one ward. Managed from **Billing → Admission Charge Schedule...**; price changes apply to bills generated afterwards.
 - **Activity log** – Every action is recorded in the `activity_log` table
 
 ## Demo Accounts
@@ -54,7 +55,8 @@ Using the command line:
 Or in **phpMyAdmin** (`http://localhost/phpmyadmin`): Import → choose `Data/schema.sql` → Go.
 
 > Already imported the database before billing was added? No need to re-import:
-> the app creates the `bills`, `bill_items` and `payments` tables on startup if they are missing.
+> the app creates the `bills`, `bill_items`, `payments` and `charge_schedules` tables on startup if they are missing
+> (seeding the default admission charges), and adds any new columns to existing tables.
 
 ### 4. Run the app
 

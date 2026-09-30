@@ -112,6 +112,7 @@
     <Compile Include="Models\BillStatus.cs" />
     <Compile Include="Models\BillCategory.cs" />
     <Compile Include="Models\PaymentMethod.cs" />
+    <Compile Include="Models\ChargeSchedule.cs" />
     <Compile Include="Data\Db.cs" />
     <Compile Include="Data\DesignTimeHelper.cs" />
     <Compile Include="Data\HospitalData.cs" />
@@ -132,6 +133,9 @@
     </Compile>
     <Compile Include="Views\AdmissionsView.cs">
       <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Views\ChargeScheduleForm.cs">
+      <SubType>Form</SubType>
     </Compile>
     <Compile Include="Views\BillingView.cs">
       <SubType>UserControl</SubType>

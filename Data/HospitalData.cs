@@ -16,6 +16,7 @@ namespace HospitalSystem.Data
         public static List<Admission> Admissions { get; private set; } = new List<Admission>();
         public static List<Bed> Beds { get; private set; } = new List<Bed>();
         public static List<Bill> Bills { get; private set; } = new List<Bill>();
+        public static List<ChargeSchedule> ChargeSchedules { get; private set; } = new List<ChargeSchedule>();
         public static List<Alert> Alerts { get; private set; } = new List<Alert>();
         public static List<ActivityItem> Activities { get; private set; } = new List<ActivityItem>();
         public static HashSet<int> DismissedAutoAlertIds { get; } = new HashSet<int>();
@@ -42,6 +43,7 @@ namespace HospitalSystem.Data
                 Admissions = LoadAdmissions(conn);
                 EnsureBillingTables(conn);
                 Bills = LoadBills(conn);
+                ChargeSchedules = LoadChargeSchedules(conn);
                 Alerts = LoadAlerts(conn);
                 Activities = LoadActivities(conn);
             }
@@ -267,6 +269,7 @@ namespace HospitalSystem.Data
                 "  quantity INT NOT NULL DEFAULT 1," +
                 "  unit_price DECIMAL(12,2) NOT NULL," +
                 "  amount DECIMAL(12,2) NOT NULL," +
+                "  per_day TINYINT(1) NOT NULL DEFAULT 0," +
                 "  FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE)",
 
                 "CREATE TABLE IF NOT EXISTS payments (" +
@@ -277,7 +280,16 @@ namespace HospitalSystem.Data
                 "  payment_date DATETIME NOT NULL," +
                 "  reference_no VARCHAR(100)," +
                 "  received_by VARCHAR(100)," +
-                "  FOREIGN KEY (bill_id) REFERENCES bills(id))"
+                "  FOREIGN KEY (bill_id) REFERENCES bills(id))",
+
+                "CREATE TABLE IF NOT EXISTS charge_schedules (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  description VARCHAR(255) NOT NULL," +
+                "  category VARCHAR(20) NOT NULL," +
+                "  unit_price DECIMAL(12,2) NOT NULL," +
+                "  ward VARCHAR(50) NULL," +
+                "  per_day TINYINT(1) NOT NULL DEFAULT 0," +
+                "  is_active TINYINT(1) NOT NULL DEFAULT 1)"
             };
 
             foreach (var sql in ddl)
@@ -285,6 +297,65 @@ namespace HospitalSystem.Data
                 using (var cmd = new MySqlCommand(sql, conn))
                     cmd.ExecuteNonQuery();
             }
+
+            // bill_items existed before per_day was added; upgrade older databases in place.
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = 'bill_items' AND column_name = 'per_day'", conn))
+            {
+                if (Convert.ToInt32(cmd.ExecuteScalar()) == 0)
+                {
+                    using (var alter = new MySqlCommand(
+                        "ALTER TABLE bill_items ADD COLUMN per_day TINYINT(1) NOT NULL DEFAULT 0", conn))
+                        alter.ExecuteNonQuery();
+                }
+            }
+
+            // Default admission charges, same as the seed in schema.sql.
+            using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM charge_schedules", conn))
+            {
+                if (Convert.ToInt32(cmd.ExecuteScalar()) == 0)
+                {
+                    using (var seed = new MySqlCommand(
+                        "INSERT INTO charge_schedules (description, category, unit_price, ward, per_day, is_active) VALUES " +
+                        "('Admission fee', 'Other', 500.00, NULL, 0, 1)," +
+                        "('Room charge - General Ward', 'Room', 1500.00, 'General Ward', 1, 1)," +
+                        "('Room charge - Private', 'Room', 3000.00, 'Private', 1, 1)," +
+                        "('Room charge - ICU', 'Room', 8000.00, 'ICU', 1, 1)," +
+                        "('Nursing care', 'Other', 350.00, NULL, 1, 1)," +
+                        "('ICU monitoring', 'Procedure', 2000.00, 'ICU', 1, 1)," +
+                        "('Basic laboratory panel (CBC, urinalysis)', 'Procedure', 750.00, NULL, 0, 1)", conn))
+                        seed.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private static List<ChargeSchedule> LoadChargeSchedules(MySqlConnection conn)
+        {
+            var list = new List<ChargeSchedule>();
+            using (var cmd = new MySqlCommand(
+                "SELECT id, description, category, unit_price, ward, per_day, is_active FROM charge_schedules", conn))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                {
+                    BillCategory category;
+                    if (!Enum.TryParse(r.GetString("category"), out category))
+                        category = BillCategory.Other;
+
+                    list.Add(new ChargeSchedule
+                    {
+                        Id = r.GetInt32("id"),
+                        Description = r.GetString("description"),
+                        Category = category,
+                        UnitPrice = r.GetDecimal("unit_price"),
+                        Ward = r.IsDBNull(r.GetOrdinal("ward")) ? null : r.GetString("ward"),
+                        PerDay = r.GetBoolean("per_day"),
+                        IsActive = r.GetBoolean("is_active")
+                    });
+                }
+            }
+            return list;
         }
 
         private static List<Bill> LoadBills(MySqlConnection conn)
@@ -321,7 +392,7 @@ namespace HospitalSystem.Data
             var byId = list.ToDictionary(b => b.Id);
 
             using (var cmd = new MySqlCommand(
-                "SELECT id, bill_id, description, category, quantity, unit_price, amount FROM bill_items", conn))
+                "SELECT id, bill_id, description, category, quantity, unit_price, amount, per_day FROM bill_items", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
@@ -341,7 +412,8 @@ namespace HospitalSystem.Data
                         Category = category,
                         Quantity = r.GetInt32("quantity"),
                         UnitPrice = r.GetDecimal("unit_price"),
-                        Amount = r.GetDecimal("amount")
+                        Amount = r.GetDecimal("amount"),
+                        PerDay = r.GetBoolean("per_day")
                     });
                 }
             }
@@ -853,17 +925,6 @@ namespace HospitalSystem.Data
         // -------------------- Billing --------------------
         public const decimal ConsultationFee = 500m;
 
-        // Daily room rate by ward, used when generating a bill from an admission.
-        public static decimal RoomRate(string ward)
-        {
-            switch (ward)
-            {
-                case "ICU": return 8000m;
-                case "Private": return 3000m;
-                default: return 1500m;
-            }
-        }
-
         public static Bill GetBill(int id) => Bills.FirstOrDefault(b => b.Id == id);
 
         public static Bill OpenBillForAdmission(int admissionId) =>
@@ -875,22 +936,29 @@ namespace HospitalSystem.Data
         public static decimal OutstandingBalance() =>
             Bills.Where(b => b.Status != BillStatus.Cancelled).Sum(b => b.Balance);
 
-        // Starting line items for a bill: room charges for the stay, or the consultation fee.
+        // Line items from the charge schedule that apply to the admission's ward,
+        // with per-day charges covering the days stayed so far.
+        public static List<BillItem> AdmissionChargesFor(Admission admission)
+        {
+            var bed = GetBed(admission.BedId);
+            string ward = bed != null ? bed.Ward : null;
+            int days = admission.CalculateDaysStayed();
+
+            return ChargeSchedules
+                .Where(c => c.AppliesTo(ward))
+                .OrderBy(c => c.Category)
+                .ThenBy(c => c.Description)
+                .Select(c => c.ToBillItem(days))
+                .ToList();
+        }
+
+        // Starting line items for a bill: scheduled admission charges, or the consultation fee.
         public static List<BillItem> DefaultChargesFor(Admission admission, Appointment appointment)
         {
             var items = new List<BillItem>();
 
             if (admission != null)
-            {
-                var bed = GetBed(admission.BedId);
-                items.Add(new BillItem
-                {
-                    Description = "Room charge - " + BedLabel(admission.BedId),
-                    Category = BillCategory.Room,
-                    Quantity = admission.CalculateDaysStayed(),
-                    UnitPrice = RoomRate(bed != null ? bed.Ward : null)
-                });
-            }
+                items.AddRange(AdmissionChargesFor(admission));
 
             if (appointment != null)
             {
@@ -953,7 +1021,7 @@ namespace HospitalSystem.Data
         }
 
         // Admission -> billing trigger: guarantees every admission has an open bill with
-        // its room charges. Returns the existing open bill if one is already linked, so
+        // the charges from the pre-set schedule for its ward. Returns the existing open bill if one is already linked, so
         // admitting never double-bills. Called by AdmissionsView right after AddAdmission.
         public static Bill EnsureAdmissionBill(Admission admission)
         {
@@ -971,46 +1039,42 @@ namespace HospitalSystem.Data
             }, items);
         }
 
-        // On discharge, bring the auto room charge in line with the real length of stay
-        // (the bill was opened at admit with 1 day). Only touches an open, unpaid bill and
-        // never lets a billing hiccup break the discharge itself.
+        // On discharge, bring the per-day charges (room, nursing...) in line with the real
+        // length of stay (the bill was opened at admit with 1 day). A deposit already paid
+        // doesn't block this: the total only grows, so it never drops below what was paid.
+        // Never lets a billing hiccup break the discharge itself.
         public static void SyncAdmissionBillOnDischarge(Admission admission)
         {
             if (admission == null) return;
 
             var bill = OpenBillForAdmission(admission.Id);
-            if (bill == null || bill.AmountPaid > 0) return;
-
-            var roomItem = bill.Items.FirstOrDefault(i => i.Category == BillCategory.Room);
-            if (roomItem == null) return;
+            if (bill == null) return;
 
             int days = admission.CalculateDaysStayed();
-            if (roomItem.Quantity == days) return;
-
-            roomItem.Quantity = days;
-            roomItem.CalculateAmount();
-            bill.CalculateTotal();
-            bill.CalculateBalance();
-            bill.UpdateStatus();
+            var changed = bill.SyncPerDayItems(days);
+            if (changed.Count == 0) return;
 
             try
             {
                 using (var conn = Db.OpenConnection())
                 using (var tx = conn.BeginTransaction())
                 {
-                    using (var cmd = new MySqlCommand(
-                        "UPDATE bill_items SET quantity=@q, amount=@a WHERE id=@id", conn, tx))
+                    foreach (var item in changed)
                     {
-                        cmd.Parameters.AddWithValue("@q", roomItem.Quantity);
-                        cmd.Parameters.AddWithValue("@a", roomItem.Amount);
-                        cmd.Parameters.AddWithValue("@id", roomItem.Id);
-                        cmd.ExecuteNonQuery();
+                        using (var cmd = new MySqlCommand(
+                            "UPDATE bill_items SET quantity=@q, amount=@a WHERE id=@id", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@q", item.Quantity);
+                            cmd.Parameters.AddWithValue("@a", item.Amount);
+                            cmd.Parameters.AddWithValue("@id", item.Id);
+                            cmd.ExecuteNonQuery();
+                        }
                     }
                     SaveBillTotals(bill, conn, tx);
                     tx.Commit();
                 }
                 LogActivity("Billing", "Updated",
-                    $"Room charge on {bill.BillNo} updated to {days} day(s) at discharge", "🧾");
+                    $"Per-day charges on {bill.BillNo} updated to {days} day(s) at discharge ({bill.TotalAmount:N2})", "🧾");
             }
             catch (MySqlException)
             {
@@ -1119,8 +1183,8 @@ namespace HospitalSystem.Data
         private static void InsertBillItem(BillItem item, MySqlConnection conn, MySqlTransaction tx)
         {
             using (var cmd = new MySqlCommand(
-                "INSERT INTO bill_items (bill_id, description, category, quantity, unit_price, amount) " +
-                "VALUES (@billId, @description, @category, @quantity, @unitPrice, @amount); SELECT LAST_INSERT_ID();", conn, tx))
+                "INSERT INTO bill_items (bill_id, description, category, quantity, unit_price, amount, per_day) " +
+                "VALUES (@billId, @description, @category, @quantity, @unitPrice, @amount, @perDay); SELECT LAST_INSERT_ID();", conn, tx))
             {
                 cmd.Parameters.AddWithValue("@billId", item.BillId);
                 cmd.Parameters.AddWithValue("@description", item.Description);
@@ -1128,6 +1192,7 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@quantity", item.Quantity);
                 cmd.Parameters.AddWithValue("@unitPrice", item.UnitPrice);
                 cmd.Parameters.AddWithValue("@amount", item.Amount);
+                cmd.Parameters.AddWithValue("@perDay", item.PerDay);
                 item.Id = Convert.ToInt32(cmd.ExecuteScalar());
             }
         }
@@ -1144,6 +1209,55 @@ namespace HospitalSystem.Data
                 cmd.Parameters.AddWithValue("@id", b.Id);
                 cmd.ExecuteNonQuery();
             }
+        }
+
+        // -------------------- Charge Schedule --------------------
+        public static List<string> Wards() =>
+            Beds.Select(b => b.Ward).Where(w => !string.IsNullOrEmpty(w)).Distinct().OrderBy(w => w).ToList();
+
+        public static ChargeSchedule AddChargeSchedule(ChargeSchedule c)
+        {
+            c.IsActive = true;
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "INSERT INTO charge_schedules (description, category, unit_price, ward, per_day, is_active) " +
+                "VALUES (@description, @category, @unitPrice, @ward, @perDay, @isActive); SELECT LAST_INSERT_ID();", conn))
+            {
+                AddChargeScheduleParameters(cmd, c);
+                c.Id = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+
+            ChargeSchedules.Add(c);
+            LogActivity("Billing", "Schedule Added", $"Added scheduled charge \"{c.Description}\" ({c.UnitPrice:N2}, {c.Basis})", "📋");
+            return c;
+        }
+
+        // Only affects bills generated from now on; existing bills keep the price they were issued with.
+        public static void UpdateChargeSchedule(ChargeSchedule c)
+        {
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "UPDATE charge_schedules SET description=@description, category=@category, unit_price=@unitPrice, " +
+                "ward=@ward, per_day=@perDay, is_active=@isActive WHERE id=@id", conn))
+            {
+                AddChargeScheduleParameters(cmd, c);
+                cmd.Parameters.AddWithValue("@id", c.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity("Billing", "Schedule Updated",
+                $"Scheduled charge \"{c.Description}\" updated ({c.UnitPrice:N2}, {c.Basis}{(c.IsActive ? "" : ", inactive")})", "📋");
+        }
+
+        private static void AddChargeScheduleParameters(MySqlCommand cmd, ChargeSchedule c)
+        {
+            cmd.Parameters.AddWithValue("@description", c.Description);
+            cmd.Parameters.AddWithValue("@category", c.Category.ToString());
+            cmd.Parameters.AddWithValue("@unitPrice", c.UnitPrice);
+            cmd.Parameters.AddWithValue("@ward", string.IsNullOrEmpty(c.Ward) ? (object)DBNull.Value : c.Ward);
+            cmd.Parameters.AddWithValue("@perDay", c.PerDay);
+            cmd.Parameters.AddWithValue("@isActive", c.IsActive);
         }
 
         // -------------------- Beds & Helpers --------------------

@@ -93,7 +93,7 @@ namespace HospitalSystem.Views
             formPanel.Controls.Add(cmbAppointment);
 
             chkAutoCharges = new CheckBox();
-            chkAutoCharges.Text = "Add room / consultation charges";
+            chkAutoCharges.Text = "Add scheduled charges";
             chkAutoCharges.Checked = true;
             chkAutoCharges.Location = new Point(15, 102);
             chkAutoCharges.AutoSize = true;
@@ -147,6 +147,17 @@ namespace HospitalSystem.Views
             cmbFilter.SelectedIndex = 0;
             cmbFilter.SelectedIndexChanged += (s, e) => LoadBills();
             btnPanel.Controls.Add(cmbFilter);
+
+            Button btnSchedule = new Button();
+            btnSchedule.Text = "Admission Charge Schedule...";
+            btnSchedule.Location = new Point(360, 5);
+            btnSchedule.Size = new Size(190, 30);
+            btnSchedule.Click += (s, e) =>
+            {
+                using (var dlg = new ChargeScheduleForm())
+                    dlg.ShowDialog(this);
+            };
+            btnPanel.Controls.Add(btnSchedule);
 
             gridBills = MakeGrid();
             gridBills.Dock = DockStyle.Top;
@@ -512,8 +523,8 @@ namespace HospitalSystem.Views
 
             string msg = "Bill " + bill.BillNo + " created. Total: " + Money(bill.TotalAmount) + ".";
             if (admission != null && admission.IsActive && chkAutoCharges.Checked)
-                msg += "\n\nThe patient is still admitted, so room charges cover the " +
-                       admission.CalculateDaysStayed() + " day(s) so far.";
+                msg += "\n\nThe patient is still admitted, so per-day charges cover the " +
+                       admission.CalculateDaysStayed() + " day(s) so far and will be updated on discharge.";
             MessageBox.Show(msg, "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             txtNotes.Clear();

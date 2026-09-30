@@ -124,6 +124,7 @@ CREATE TABLE IF NOT EXISTS bill_items (
     quantity     INT NOT NULL DEFAULT 1,
     unit_price   DECIMAL(12,2) NOT NULL,
     amount       DECIMAL(12,2) NOT NULL,
+    per_day      TINYINT(1) NOT NULL DEFAULT 0,   -- quantity follows the admission's days stayed
     FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
 );
 
@@ -136,6 +137,18 @@ CREATE TABLE IF NOT EXISTS payments (
     reference_no    VARCHAR(100),
     received_by     VARCHAR(100),
     FOREIGN KEY (bill_id) REFERENCES bills(id)
+);
+
+-- Pre-set charges billed automatically when a patient is admitted.
+-- ward NULL = every ward; per_day 1 = billed per day of stay, 0 = one-time.
+CREATE TABLE IF NOT EXISTS charge_schedules (
+    id           INT PRIMARY KEY AUTO_INCREMENT,
+    description  VARCHAR(255) NOT NULL,
+    category     VARCHAR(20) NOT NULL,
+    unit_price   DECIMAL(12,2) NOT NULL,
+    ward         VARCHAR(50) NULL,
+    per_day      TINYINT(1) NOT NULL DEFAULT 0,
+    is_active    TINYINT(1) NOT NULL DEFAULT 1
 );
 
 -- Seed data (mirrors the previous in-memory HospitalData.Seed()) --
@@ -181,6 +194,17 @@ INSERT INTO patients (id, full_name, age, gender, contact, address, blood_type, 
     (2, 'Maria Santos',   32, 'Female', '09189876543', 'Makati City', 'A+', DATE_SUB(CURDATE(), INTERVAL 5 DAY)),
     (3, 'Pedro Ramirez',  28, 'Male',   '09221234567', 'Pasig City',  'B+', DATE_SUB(CURDATE(), INTERVAL 2 DAY))
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
+
+-- Default admission charges, mirrors HospitalData.EnsureBillingTables
+INSERT INTO charge_schedules (id, description, category, unit_price, ward, per_day, is_active) VALUES
+    (1, 'Admission fee',                            'Other',     500.00,  NULL,           0, 1),
+    (2, 'Room charge - General Ward',               'Room',      1500.00, 'General Ward', 1, 1),
+    (3, 'Room charge - Private',                    'Room',      3000.00, 'Private',      1, 1),
+    (4, 'Room charge - ICU',                        'Room',      8000.00, 'ICU',          1, 1),
+    (5, 'Nursing care',                             'Other',     350.00,  NULL,           1, 1),
+    (6, 'ICU monitoring',                           'Procedure', 2000.00, 'ICU',          1, 1),
+    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Procedure', 750.00,  NULL,           0, 1)
+ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 INSERT INTO alerts (id, title, message, severity, created_on) VALUES
     (1, 'ICU Bed Critical',        'Only 1 ICU bed remaining',                       'High',   DATE_SUB(NOW(), INTERVAL 2 HOUR)),

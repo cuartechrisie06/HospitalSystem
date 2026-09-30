@@ -11,6 +11,7 @@ namespace HospitalSystem.Models
         public int Quantity { get; set; } = 1;
         public decimal UnitPrice { get; set; }
         public decimal Amount { get; set; }
+        public bool PerDay { get; set; }      // quantity follows the admission's days stayed
 
         public decimal CalculateAmount()
         {
