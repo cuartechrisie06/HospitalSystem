@@ -102,6 +102,23 @@ Or in **phpMyAdmin** (`http://localhost/phpmyadmin`): Import → choose `Data/sc
 
 MySQL must be running *before* you launch the app, otherwise it will fail when it loads data.
 
+## Editing screens in the Designer
+
+Every form and view opens in the Visual Studio Designer with all of its controls:
+`LoginForm`, `DashboardForm` (sidebar), `DashboardView`, `PatientsView`, `DoctorsView`, `AppointmentsView`,
+`AdmissionsView`, `BillingView`, `ActivityLogView` and `ChargeScheduleForm`.
+
+The Designer never runs a class's constructor or helper methods. It only reads `InitializeComponent()`,
+so to keep a control visible there:
+
+- declare it as a field and create it inside `InitializeComponent()` with plain statements
+  (`this.btn = new System.Windows.Forms.Button();`, `this.btn.Text = "...";`, `this.panel.Controls.Add(this.btn);`)
+- wire events to named methods: `this.btn.Click += new System.EventHandler(this.Btn_Click);`
+- don't use local variables, lambdas, `new X { ... }` initializers or calls to your own helper methods in there
+
+Only data-driven content is built at runtime: grid rows, combo box items that come from enums or the database,
+the dashboard's alert rows, the ward bars and charts, and what each role is allowed to see.
+
 ## Connection String
 
 Set in `Data/Db.cs`:

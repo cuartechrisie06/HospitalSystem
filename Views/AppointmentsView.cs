@@ -11,31 +11,53 @@ namespace HospitalSystem.Views
     {
         private const string PatientSearchPlaceholder = "Search active patients by ID, name, or contact...";
 
+        // Layout
+        private TableLayoutPanel root;
+        private Panel scheduleCard;
+        private Label lblScheduleTitle;
+        private TableLayoutPanel scheduleLayout;
+        private Panel patientPicker;
+        private Label lblPickPatient;
+        private Panel searchSpacer;
+        private Panel fieldsPanel;
+        private Label lblDepartment;
+        private Label lblDoctor;
+        private Label lblDateTime;
+        private Label lblReason;
+        private Label lblList;
+        private Panel actionBar;
+
         // Scheduling form
         private DataGridView gridPatients;
         private TextBox txtPatientSearch;
         private Label lblSelectedPatient;
-        private ComboBox cmbDepartment, cmbDoctor;
+        private ComboBox cmbDepartment;
+        private ComboBox cmbDoctor;
         private DateTimePicker dtpDate;
         private TextBox txtReason;
         private Button btnSchedule;
 
         // Appointments list + actions
         private DataGridView grid;
-        private Button btnConfirm, btnCancel, btnReschedule, btnComplete;
+        private Button btnConfirm;
+        private Button btnCancel;
+        private Button btnReschedule;
+        private Button btnComplete;
 
         private int selectedPatientId = 0;
         private bool patientSearchPlaceholderActive = true;
 
         public AppointmentsView()
         {
+            // Every control and event is set up in InitializeComponent() (Designer format),
+            // so the Designer shows the complete screen.
             InitializeComponent();
-            WireEvents();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
             {
+                dtpDate.MinDate = DateTime.Today;   // can't be expressed in designer code
                 LoadDepartments();
                 LoadDoctors();
                 LoadPatientList("");
@@ -43,265 +65,404 @@ namespace HospitalSystem.Views
             }
         }
 
-        // Wired in plain code (not InitializeComponent) so it survives a Designer save,
-        // matching the convention used by the other views in this project.
-        private void WireEvents()
-        {
-            txtPatientSearch.Enter += TxtPatientSearch_Enter;
-            txtPatientSearch.Leave += TxtPatientSearch_Leave;
-            txtPatientSearch.TextChanged += TxtPatientSearch_TextChanged;
-            gridPatients.CellClick += GridPatients_CellClick;
-
-            btnSchedule.Click += BtnSchedule_Click;
-            btnConfirm.Click += BtnConfirm_Click;
-            btnCancel.Click += BtnCancel_Click;
-            btnReschedule.Click += BtnReschedule_Click;
-            btnComplete.Click += BtnComplete_Click;
-        }
-
+        // Designer-generated layout. root is a 4-row table, top to bottom: the Schedule
+        // Appointment card (patient picker on the left, fields on the right), the list title,
+        // the action buttons, and the appointments grid.
         private void InitializeComponent()
         {
-            this.BackColor = Color.FromArgb(243, 244, 246);
-            this.Padding = new Padding(10);
-
-            // Deterministic top-to-bottom layout: schedule card, list header, action bar, grid.
-            var root = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 4,
-                BackColor = Color.FromArgb(243, 244, 246)
-            };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 372));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 34));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44));
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            this.Controls.Add(root);
-
-            root.Controls.Add(BuildScheduleCard(), 0, 0);
-
-            var lblList = new Label
-            {
-                Text = "Appointments",
-                Font = new Font("Segoe UI", 11F, FontStyle.Bold),
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.FromArgb(30, 41, 59)
-            };
-            root.Controls.Add(lblList, 0, 1);
-
-            root.Controls.Add(BuildActionBar(), 0, 2);
-
-            grid = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
-                MultiSelect = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = Color.White,
-                ColumnHeadersHeight = 34
-            };
-            root.Controls.Add(grid, 0, 3);
-        }
-
-        private Panel BuildScheduleCard()
-        {
-            var card = new Panel
-            {
-                Dock = DockStyle.Fill,
-                BackColor = Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                Padding = new Padding(12),
-                Margin = new Padding(0, 0, 0, 8)
-            };
-
-            var title = new Label
-            {
-                Text = "Schedule Appointment",
-                Font = new Font("Segoe UI", 12F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(30, 41, 59),
-                Dock = DockStyle.Top,
-                Height = 30
-            };
-
-            var inner = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 1
-            };
-            inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 46F));
-            inner.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 54F));
-
-            inner.Controls.Add(BuildPatientPicker(), 0, 0);
-            inner.Controls.Add(BuildFieldsPanel(), 1, 0);
-
-            card.Controls.Add(inner);
-            card.Controls.Add(title);
-            inner.BringToFront();
-            return card;
-        }
-
-        // Left column: searchable table of ACTIVE patients (replaces the old combo box).
-        private Panel BuildPatientPicker()
-        {
-            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(0, 0, 10, 0) };
-
-            var lblHdr = new Label
-            {
-                Text = "1. Search & select an active patient",
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(55, 65, 81),
-                Dock = DockStyle.Top,
-                Height = 22
-            };
-
-            txtPatientSearch = new TextBox
-            {
-                Dock = DockStyle.Top,
-                Font = new Font("Segoe UI", 10F),
-                Text = PatientSearchPlaceholder,
-                ForeColor = Color.Gray
-            };
+            this.root = new System.Windows.Forms.TableLayoutPanel();
+            this.scheduleCard = new System.Windows.Forms.Panel();
+            this.scheduleLayout = new System.Windows.Forms.TableLayoutPanel();
+            this.patientPicker = new System.Windows.Forms.Panel();
+            this.gridPatients = new System.Windows.Forms.DataGridView();
+            this.searchSpacer = new System.Windows.Forms.Panel();
+            this.txtPatientSearch = new System.Windows.Forms.TextBox();
+            this.lblPickPatient = new System.Windows.Forms.Label();
+            this.fieldsPanel = new System.Windows.Forms.Panel();
+            this.lblSelectedPatient = new System.Windows.Forms.Label();
+            this.lblDepartment = new System.Windows.Forms.Label();
+            this.cmbDepartment = new System.Windows.Forms.ComboBox();
+            this.lblDoctor = new System.Windows.Forms.Label();
+            this.cmbDoctor = new System.Windows.Forms.ComboBox();
+            this.lblDateTime = new System.Windows.Forms.Label();
+            this.dtpDate = new System.Windows.Forms.DateTimePicker();
+            this.lblReason = new System.Windows.Forms.Label();
+            this.txtReason = new System.Windows.Forms.TextBox();
+            this.btnSchedule = new System.Windows.Forms.Button();
+            this.lblScheduleTitle = new System.Windows.Forms.Label();
+            this.lblList = new System.Windows.Forms.Label();
+            this.actionBar = new System.Windows.Forms.Panel();
+            this.btnConfirm = new System.Windows.Forms.Button();
+            this.btnCancel = new System.Windows.Forms.Button();
+            this.btnReschedule = new System.Windows.Forms.Button();
+            this.btnComplete = new System.Windows.Forms.Button();
+            this.grid = new System.Windows.Forms.DataGridView();
+            this.root.SuspendLayout();
+            this.scheduleCard.SuspendLayout();
+            this.scheduleLayout.SuspendLayout();
+            this.patientPicker.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.gridPatients)).BeginInit();
+            this.fieldsPanel.SuspendLayout();
+            this.actionBar.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).BeginInit();
+            this.SuspendLayout();
+            //
+            // root
+            //
+            this.root.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
+            this.root.ColumnCount = 1;
+            this.root.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.root.Controls.Add(this.scheduleCard, 0, 0);
+            this.root.Controls.Add(this.lblList, 0, 1);
+            this.root.Controls.Add(this.actionBar, 0, 2);
+            this.root.Controls.Add(this.grid, 0, 3);
+            this.root.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.root.Location = new System.Drawing.Point(10, 10);
+            this.root.Name = "root";
+            this.root.RowCount = 4;
+            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 372F));
+            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 34F));
+            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 44F));
+            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.root.Size = new System.Drawing.Size(1004, 740);
+            this.root.TabIndex = 0;
+            //
+            // scheduleCard
+            //
+            this.scheduleCard.BackColor = System.Drawing.Color.White;
+            this.scheduleCard.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.scheduleCard.Controls.Add(this.scheduleLayout);
+            this.scheduleCard.Controls.Add(this.lblScheduleTitle);
+            this.scheduleCard.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.scheduleCard.Location = new System.Drawing.Point(0, 0);
+            this.scheduleCard.Margin = new System.Windows.Forms.Padding(0, 0, 0, 8);
+            this.scheduleCard.Name = "scheduleCard";
+            this.scheduleCard.Padding = new System.Windows.Forms.Padding(12);
+            this.scheduleCard.Size = new System.Drawing.Size(1004, 364);
+            this.scheduleCard.TabIndex = 0;
+            //
+            // lblScheduleTitle
+            //
+            this.lblScheduleTitle.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lblScheduleTitle.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            this.lblScheduleTitle.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(41)))), ((int)(((byte)(59)))));
+            this.lblScheduleTitle.Location = new System.Drawing.Point(12, 12);
+            this.lblScheduleTitle.Name = "lblScheduleTitle";
+            this.lblScheduleTitle.Size = new System.Drawing.Size(978, 30);
+            this.lblScheduleTitle.TabIndex = 0;
+            this.lblScheduleTitle.Text = "Schedule Appointment";
+            //
+            // scheduleLayout
+            //
+            this.scheduleLayout.ColumnCount = 2;
+            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 46F));
+            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 54F));
+            this.scheduleLayout.Controls.Add(this.patientPicker, 0, 0);
+            this.scheduleLayout.Controls.Add(this.fieldsPanel, 1, 0);
+            this.scheduleLayout.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.scheduleLayout.Location = new System.Drawing.Point(12, 42);
+            this.scheduleLayout.Name = "scheduleLayout";
+            this.scheduleLayout.RowCount = 1;
+            this.scheduleLayout.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            this.scheduleLayout.Size = new System.Drawing.Size(978, 308);
+            this.scheduleLayout.TabIndex = 1;
+            //
+            // patientPicker
+            // Left column: searchable table of ACTIVE patients.
+            //
+            this.patientPicker.Controls.Add(this.gridPatients);
+            this.patientPicker.Controls.Add(this.searchSpacer);
+            this.patientPicker.Controls.Add(this.txtPatientSearch);
+            this.patientPicker.Controls.Add(this.lblPickPatient);
+            this.patientPicker.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.patientPicker.Location = new System.Drawing.Point(3, 3);
+            this.patientPicker.Name = "patientPicker";
+            this.patientPicker.Padding = new System.Windows.Forms.Padding(0, 0, 10, 0);
+            this.patientPicker.Size = new System.Drawing.Size(443, 302);
+            this.patientPicker.TabIndex = 0;
+            //
+            // lblPickPatient
+            //
+            this.lblPickPatient.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lblPickPatient.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+            this.lblPickPatient.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(55)))), ((int)(((byte)(65)))), ((int)(((byte)(81)))));
+            this.lblPickPatient.Location = new System.Drawing.Point(0, 0);
+            this.lblPickPatient.Name = "lblPickPatient";
+            this.lblPickPatient.Size = new System.Drawing.Size(433, 22);
+            this.lblPickPatient.TabIndex = 0;
+            this.lblPickPatient.Text = "1. Search && select an active patient";
+            //
+            // txtPatientSearch
+            //
+            this.txtPatientSearch.Dock = System.Windows.Forms.DockStyle.Top;
+            this.txtPatientSearch.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.txtPatientSearch.ForeColor = System.Drawing.Color.Gray;
+            this.txtPatientSearch.Location = new System.Drawing.Point(0, 22);
+            this.txtPatientSearch.Name = "txtPatientSearch";
+            this.txtPatientSearch.Size = new System.Drawing.Size(433, 25);
+            this.txtPatientSearch.TabIndex = 1;
+            this.txtPatientSearch.Text = "Search active patients by ID, name, or contact...";
+            this.txtPatientSearch.TextChanged += new System.EventHandler(this.TxtPatientSearch_TextChanged);
+            this.txtPatientSearch.Enter += new System.EventHandler(this.TxtPatientSearch_Enter);
+            this.txtPatientSearch.Leave += new System.EventHandler(this.TxtPatientSearch_Leave);
+            //
+            // searchSpacer
             // A little breathing room under the search box.
-            var spacer = new Panel { Dock = DockStyle.Top, Height = 6 };
+            //
+            this.searchSpacer.Dock = System.Windows.Forms.DockStyle.Top;
+            this.searchSpacer.Location = new System.Drawing.Point(0, 47);
+            this.searchSpacer.Name = "searchSpacer";
+            this.searchSpacer.Size = new System.Drawing.Size(433, 6);
+            this.searchSpacer.TabIndex = 2;
+            //
+            // gridPatients
+            //
+            this.gridPatients.AllowUserToAddRows = false;
+            this.gridPatients.AllowUserToResizeRows = false;
+            this.gridPatients.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
+            this.gridPatients.BackgroundColor = System.Drawing.Color.White;
+            this.gridPatients.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.gridPatients.Location = new System.Drawing.Point(0, 53);
+            this.gridPatients.MultiSelect = false;
+            this.gridPatients.Name = "gridPatients";
+            this.gridPatients.ReadOnly = true;
+            this.gridPatients.RowHeadersVisible = false;
+            this.gridPatients.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
+            this.gridPatients.Size = new System.Drawing.Size(433, 249);
+            this.gridPatients.TabIndex = 3;
+            this.gridPatients.CellClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.GridPatients_CellClick);
+            //
+            // fieldsPanel
+            // Right column: the remaining appointment fields.
+            //
+            this.fieldsPanel.Controls.Add(this.lblSelectedPatient);
+            this.fieldsPanel.Controls.Add(this.lblDepartment);
+            this.fieldsPanel.Controls.Add(this.cmbDepartment);
+            this.fieldsPanel.Controls.Add(this.lblDoctor);
+            this.fieldsPanel.Controls.Add(this.cmbDoctor);
+            this.fieldsPanel.Controls.Add(this.lblDateTime);
+            this.fieldsPanel.Controls.Add(this.dtpDate);
+            this.fieldsPanel.Controls.Add(this.lblReason);
+            this.fieldsPanel.Controls.Add(this.txtReason);
+            this.fieldsPanel.Controls.Add(this.btnSchedule);
+            this.fieldsPanel.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.fieldsPanel.Location = new System.Drawing.Point(452, 3);
+            this.fieldsPanel.Name = "fieldsPanel";
+            this.fieldsPanel.Size = new System.Drawing.Size(523, 302);
+            this.fieldsPanel.TabIndex = 1;
+            //
+            // lblSelectedPatient
+            //
+            this.lblSelectedPatient.AutoSize = true;
+            this.lblSelectedPatient.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+            this.lblSelectedPatient.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(185)))), ((int)(((byte)(28)))), ((int)(((byte)(28)))));
+            this.lblSelectedPatient.Location = new System.Drawing.Point(0, 4);
+            this.lblSelectedPatient.MaximumSize = new System.Drawing.Size(460, 0);
+            this.lblSelectedPatient.Name = "lblSelectedPatient";
+            this.lblSelectedPatient.Size = new System.Drawing.Size(380, 17);
+            this.lblSelectedPatient.TabIndex = 0;
+            this.lblSelectedPatient.Text = "Selected patient:  (none — pick one from the list on the left)";
+            //
+            // lblDepartment
+            //
+            this.lblDepartment.AutoSize = true;
+            this.lblDepartment.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblDepartment.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
+            this.lblDepartment.Location = new System.Drawing.Point(0, 40);
+            this.lblDepartment.Name = "lblDepartment";
+            this.lblDepartment.Size = new System.Drawing.Size(80, 15);
+            this.lblDepartment.TabIndex = 1;
+            this.lblDepartment.Text = "Department *";
+            //
+            // cmbDepartment
+            //
+            this.cmbDepartment.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbDepartment.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.cmbDepartment.Location = new System.Drawing.Point(0, 62);
+            this.cmbDepartment.Name = "cmbDepartment";
+            this.cmbDepartment.Size = new System.Drawing.Size(300, 25);
+            this.cmbDepartment.TabIndex = 2;
+            //
+            // lblDoctor
+            //
+            this.lblDoctor.AutoSize = true;
+            this.lblDoctor.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblDoctor.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
+            this.lblDoctor.Location = new System.Drawing.Point(0, 96);
+            this.lblDoctor.Name = "lblDoctor";
+            this.lblDoctor.Size = new System.Drawing.Size(130, 15);
+            this.lblDoctor.TabIndex = 3;
+            this.lblDoctor.Text = "Doctor *  (active only)";
+            //
+            // cmbDoctor
+            //
+            this.cmbDoctor.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbDoctor.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.cmbDoctor.Location = new System.Drawing.Point(0, 118);
+            this.cmbDoctor.Name = "cmbDoctor";
+            this.cmbDoctor.Size = new System.Drawing.Size(300, 25);
+            this.cmbDoctor.TabIndex = 4;
+            //
+            // lblDateTime
+            //
+            this.lblDateTime.AutoSize = true;
+            this.lblDateTime.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblDateTime.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
+            this.lblDateTime.Location = new System.Drawing.Point(0, 152);
+            this.lblDateTime.Name = "lblDateTime";
+            this.lblDateTime.Size = new System.Drawing.Size(80, 15);
+            this.lblDateTime.TabIndex = 5;
+            this.lblDateTime.Text = "Date && Time *";
+            //
+            // dtpDate
+            // (MinDate = today is set at runtime in the constructor)
+            //
+            this.dtpDate.CustomFormat = "yyyy-MM-dd HH:mm";
+            this.dtpDate.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.dtpDate.Format = System.Windows.Forms.DateTimePickerFormat.Custom;
+            this.dtpDate.Location = new System.Drawing.Point(0, 174);
+            this.dtpDate.Name = "dtpDate";
+            this.dtpDate.Size = new System.Drawing.Size(300, 25);
+            this.dtpDate.TabIndex = 6;
+            //
+            // lblReason
+            //
+            this.lblReason.AutoSize = true;
+            this.lblReason.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblReason.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
+            this.lblReason.Location = new System.Drawing.Point(0, 208);
+            this.lblReason.Name = "lblReason";
+            this.lblReason.Size = new System.Drawing.Size(45, 15);
+            this.lblReason.TabIndex = 7;
+            this.lblReason.Text = "Reason";
+            //
+            // txtReason
+            //
+            this.txtReason.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.txtReason.Location = new System.Drawing.Point(0, 230);
+            this.txtReason.Name = "txtReason";
+            this.txtReason.Size = new System.Drawing.Size(360, 25);
+            this.txtReason.TabIndex = 8;
+            //
+            // btnSchedule
+            //
+            this.btnSchedule.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnSchedule.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnSchedule.FlatAppearance.BorderSize = 0;
+            this.btnSchedule.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnSchedule.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            this.btnSchedule.ForeColor = System.Drawing.Color.White;
+            this.btnSchedule.Location = new System.Drawing.Point(0, 268);
+            this.btnSchedule.Name = "btnSchedule";
+            this.btnSchedule.Size = new System.Drawing.Size(200, 36);
+            this.btnSchedule.TabIndex = 9;
+            this.btnSchedule.Text = "Schedule Appointment";
+            this.btnSchedule.UseVisualStyleBackColor = false;
+            this.btnSchedule.Click += new System.EventHandler(this.BtnSchedule_Click);
+            //
+            // lblList
+            //
+            this.lblList.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.lblList.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
+            this.lblList.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(41)))), ((int)(((byte)(59)))));
+            this.lblList.Location = new System.Drawing.Point(3, 372);
+            this.lblList.Name = "lblList";
+            this.lblList.Size = new System.Drawing.Size(998, 34);
+            this.lblList.TabIndex = 1;
+            this.lblList.Text = "Appointments";
+            this.lblList.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            //
+            // actionBar
+            //
+            this.actionBar.Controls.Add(this.btnConfirm);
+            this.actionBar.Controls.Add(this.btnCancel);
+            this.actionBar.Controls.Add(this.btnReschedule);
+            this.actionBar.Controls.Add(this.btnComplete);
+            this.actionBar.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.actionBar.Location = new System.Drawing.Point(3, 409);
+            this.actionBar.Name = "actionBar";
+            this.actionBar.Size = new System.Drawing.Size(998, 38);
+            this.actionBar.TabIndex = 2;
+            //
+            // btnConfirm
+            //
+            this.btnConfirm.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnConfirm.Location = new System.Drawing.Point(0, 6);
+            this.btnConfirm.Name = "btnConfirm";
+            this.btnConfirm.Size = new System.Drawing.Size(140, 30);
+            this.btnConfirm.TabIndex = 0;
+            this.btnConfirm.Text = "Confirm Selected";
+            this.btnConfirm.UseVisualStyleBackColor = true;
+            this.btnConfirm.Click += new System.EventHandler(this.BtnConfirm_Click);
+            //
+            // btnCancel
+            //
+            this.btnCancel.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnCancel.Location = new System.Drawing.Point(150, 6);
+            this.btnCancel.Name = "btnCancel";
+            this.btnCancel.Size = new System.Drawing.Size(140, 30);
+            this.btnCancel.TabIndex = 1;
+            this.btnCancel.Text = "Cancel Selected";
+            this.btnCancel.UseVisualStyleBackColor = true;
+            this.btnCancel.Click += new System.EventHandler(this.BtnCancel_Click);
+            //
+            // btnReschedule
+            //
+            this.btnReschedule.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnReschedule.Location = new System.Drawing.Point(300, 6);
+            this.btnReschedule.Name = "btnReschedule";
+            this.btnReschedule.Size = new System.Drawing.Size(150, 30);
+            this.btnReschedule.TabIndex = 2;
+            this.btnReschedule.Text = "Reschedule Selected";
+            this.btnReschedule.UseVisualStyleBackColor = true;
+            this.btnReschedule.Click += new System.EventHandler(this.BtnReschedule_Click);
+            //
+            // btnComplete
+            //
+            this.btnComplete.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnComplete.Location = new System.Drawing.Point(460, 6);
+            this.btnComplete.Name = "btnComplete";
+            this.btnComplete.Size = new System.Drawing.Size(140, 30);
+            this.btnComplete.TabIndex = 3;
+            this.btnComplete.Text = "Mark Completed";
+            this.btnComplete.UseVisualStyleBackColor = true;
+            this.btnComplete.Click += new System.EventHandler(this.BtnComplete_Click);
+            //
+            // grid
+            //
+            this.grid.AllowUserToAddRows = false;
+            this.grid.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
+            this.grid.BackgroundColor = System.Drawing.Color.White;
+            this.grid.ColumnHeadersHeight = 34;
+            this.grid.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.grid.Location = new System.Drawing.Point(3, 453);
+            this.grid.MultiSelect = false;
+            this.grid.Name = "grid";
+            this.grid.ReadOnly = true;
+            this.grid.RowHeadersVisible = false;
+            this.grid.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
+            this.grid.Size = new System.Drawing.Size(998, 284);
+            this.grid.TabIndex = 3;
+            //
+            // AppointmentsView
+            //
+            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
+            this.Controls.Add(this.root);
+            this.Name = "AppointmentsView";
+            this.Padding = new System.Windows.Forms.Padding(10);
+            this.Size = new System.Drawing.Size(1024, 760);
+            this.root.ResumeLayout(false);
+            this.scheduleCard.ResumeLayout(false);
+            this.scheduleLayout.ResumeLayout(false);
+            this.patientPicker.ResumeLayout(false);
+            this.patientPicker.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.gridPatients)).EndInit();
+            this.fieldsPanel.ResumeLayout(false);
+            this.fieldsPanel.PerformLayout();
+            this.actionBar.ResumeLayout(false);
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).EndInit();
+            this.ResumeLayout(false);
 
-            gridPatients = new DataGridView
-            {
-                Dock = DockStyle.Fill,
-                AllowUserToAddRows = false,
-                ReadOnly = true,
-                RowHeadersVisible = false,
-                MultiSelect = false,
-                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
-                AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill,
-                BackgroundColor = Color.White,
-                BorderStyle = BorderStyle.FixedSingle,
-                AllowUserToResizeRows = false
-            };
-
-            panel.Controls.Add(gridPatients);
-            panel.Controls.Add(spacer);
-            panel.Controls.Add(txtPatientSearch);
-            panel.Controls.Add(lblHdr);
-            gridPatients.BringToFront();
-            return panel;
-        }
-
-        // Right column: the remaining appointment fields.
-        private Panel BuildFieldsPanel()
-        {
-            var panel = new Panel { Dock = DockStyle.Fill };
-
-            lblSelectedPatient = new Label
-            {
-                Text = "Selected patient:  (none — pick one from the list on the left)",
-                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(185, 28, 28),
-                Location = new Point(0, 4),
-                AutoSize = true,
-                MaximumSize = new Size(460, 0)
-            };
-            panel.Controls.Add(lblSelectedPatient);
-
-            AddFieldLabel(panel, "Department *", 0, 40);
-            cmbDepartment = new ComboBox
-            {
-                Location = new Point(0, 62),
-                Size = new Size(300, 28),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Font = new Font("Segoe UI", 10F)
-            };
-            panel.Controls.Add(cmbDepartment);
-
-            AddFieldLabel(panel, "Doctor *  (active only)", 0, 96);
-            cmbDoctor = new ComboBox
-            {
-                Location = new Point(0, 118),
-                Size = new Size(300, 28),
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Font = new Font("Segoe UI", 10F)
-            };
-            panel.Controls.Add(cmbDoctor);
-
-            AddFieldLabel(panel, "Date & Time *", 0, 152);
-            dtpDate = new DateTimePicker
-            {
-                Location = new Point(0, 174),
-                Size = new Size(300, 28),
-                Font = new Font("Segoe UI", 10F),
-                Format = DateTimePickerFormat.Custom,
-                CustomFormat = "yyyy-MM-dd HH:mm",
-                MinDate = DateTime.Today
-            };
-            panel.Controls.Add(dtpDate);
-
-            AddFieldLabel(panel, "Reason", 0, 208);
-            txtReason = new TextBox
-            {
-                Location = new Point(0, 230),
-                Size = new Size(360, 28),
-                Font = new Font("Segoe UI", 10F)
-            };
-            panel.Controls.Add(txtReason);
-
-            btnSchedule = new Button
-            {
-                Text = "Schedule Appointment",
-                Location = new Point(0, 268),
-                Size = new Size(200, 36),
-                BackColor = Color.FromArgb(37, 99, 235),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Cursor = Cursors.Hand
-            };
-            btnSchedule.FlatAppearance.BorderSize = 0;
-            panel.Controls.Add(btnSchedule);
-
-            return panel;
-        }
-
-        private Panel BuildActionBar()
-        {
-            var bar = new Panel { Dock = DockStyle.Fill };
-
-            btnConfirm = MakeActionButton("Confirm Selected", 0);
-            btnCancel = MakeActionButton("Cancel Selected", 150);
-            btnReschedule = MakeActionButton("Reschedule Selected", 300);
-            btnComplete = MakeActionButton("Mark Completed", 460);
-
-            bar.Controls.Add(btnConfirm);
-            bar.Controls.Add(btnCancel);
-            bar.Controls.Add(btnReschedule);
-            bar.Controls.Add(btnComplete);
-            return bar;
-        }
-
-        private static Button MakeActionButton(string text, int x)
-        {
-            return new Button
-            {
-                Text = text,
-                Location = new Point(x, 6),
-                Size = new Size(text.Length > 16 ? 150 : 140, 30),
-                Cursor = Cursors.Hand
-            };
-        }
-
-        private void AddFieldLabel(Panel parent, string text, int x, int y)
-        {
-            parent.Controls.Add(new Label
-            {
-                Text = text,
-                Location = new Point(x, y),
-                AutoSize = true,
-                Font = new Font("Segoe UI", 9F),
-                ForeColor = Color.FromArgb(75, 85, 99)
-            });
         }
 
         // ===================== Combo / list loading =====================

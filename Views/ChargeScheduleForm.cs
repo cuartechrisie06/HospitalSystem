@@ -13,136 +13,272 @@ namespace HospitalSystem.Views
     {
         private const string AllWards = "(All wards)";
 
+        private Label lblInfo;
+        private CheckBox chkShowInactive;
         private DataGridView grid;
+        private Label lblDescription;
         private TextBox txtDescription;
-        private ComboBox cmbCategory, cmbWard;
+        private Label lblCategory;
+        private ComboBox cmbCategory;
+        private Label lblWard;
+        private ComboBox cmbWard;
+        private Label lblUnitPrice;
         private NumericUpDown numPrice;
-        private CheckBox chkPerDay, chkShowInactive;
-        private Button btnAdd, btnUpdate, btnToggle, btnClear, btnClose;
+        private CheckBox chkPerDay;
+        private Button btnAdd;
+        private Button btnUpdate;
+        private Button btnToggle;
+        private Button btnClear;
+        private Button btnClose;
 
         public ChargeScheduleForm()
         {
+            // Every control and event is set up in InitializeComponent() (Designer format),
+            // so the Designer shows the complete dialog.
             InitializeComponent();
 
             if (!DesignTimeHelper.IsDesignMode)
             {
+                cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
                 LoadWards();
                 LoadGrid();
             }
         }
 
+        // Designer-generated layout: explanation, "show inactive", the schedule grid, the
+        // edit fields (description, category, ward, price, per day), the action buttons and Close.
         private void InitializeComponent()
         {
-            this.Text = "Admission Charge Schedule";
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
-            this.StartPosition = FormStartPosition.CenterParent;
-            this.MinimizeBox = false;
+            this.lblInfo = new System.Windows.Forms.Label();
+            this.chkShowInactive = new System.Windows.Forms.CheckBox();
+            this.grid = new System.Windows.Forms.DataGridView();
+            this.lblDescription = new System.Windows.Forms.Label();
+            this.txtDescription = new System.Windows.Forms.TextBox();
+            this.lblCategory = new System.Windows.Forms.Label();
+            this.cmbCategory = new System.Windows.Forms.ComboBox();
+            this.lblWard = new System.Windows.Forms.Label();
+            this.cmbWard = new System.Windows.Forms.ComboBox();
+            this.lblUnitPrice = new System.Windows.Forms.Label();
+            this.numPrice = new System.Windows.Forms.NumericUpDown();
+            this.chkPerDay = new System.Windows.Forms.CheckBox();
+            this.btnAdd = new System.Windows.Forms.Button();
+            this.btnUpdate = new System.Windows.Forms.Button();
+            this.btnToggle = new System.Windows.Forms.Button();
+            this.btnClear = new System.Windows.Forms.Button();
+            this.btnClose = new System.Windows.Forms.Button();
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numPrice)).BeginInit();
+            this.SuspendLayout();
+            //
+            // lblInfo
+            //
+            this.lblInfo.Location = new System.Drawing.Point(15, 10);
+            this.lblInfo.Name = "lblInfo";
+            this.lblInfo.Size = new System.Drawing.Size(730, 32);
+            this.lblInfo.TabIndex = 0;
+            this.lblInfo.Text = "These charges are added to a patient\'s bill automatically when they are admitted. Per-day charges are updated to the full length of stay on discharge. Price changes only affect bills generated afterwards.";
+            //
+            // chkShowInactive
+            //
+            this.chkShowInactive.AutoSize = true;
+            this.chkShowInactive.Location = new System.Drawing.Point(15, 45);
+            this.chkShowInactive.Name = "chkShowInactive";
+            this.chkShowInactive.Size = new System.Drawing.Size(93, 17);
+            this.chkShowInactive.TabIndex = 1;
+            this.chkShowInactive.Text = "Show inactive";
+            this.chkShowInactive.CheckedChanged += new System.EventHandler(this.ChkShowInactive_CheckedChanged);
+            //
+            // grid
+            //
+            this.grid.AllowUserToAddRows = false;
+            this.grid.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
+            this.grid.BackgroundColor = System.Drawing.Color.White;
+            this.grid.Location = new System.Drawing.Point(15, 70);
+            this.grid.MultiSelect = false;
+            this.grid.Name = "grid";
+            this.grid.ReadOnly = true;
+            this.grid.RowHeadersVisible = false;
+            this.grid.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
+            this.grid.Size = new System.Drawing.Size(730, 240);
+            this.grid.TabIndex = 2;
+            this.grid.SelectionChanged += new System.EventHandler(this.Grid_SelectionChanged);
+            //
+            // lblDescription
+            //
+            this.lblDescription.AutoSize = true;
+            this.lblDescription.Location = new System.Drawing.Point(15, 325);
+            this.lblDescription.Name = "lblDescription";
+            this.lblDescription.Size = new System.Drawing.Size(60, 13);
+            this.lblDescription.TabIndex = 3;
+            this.lblDescription.Text = "Description";
+            //
+            // txtDescription
+            //
+            this.txtDescription.Location = new System.Drawing.Point(15, 345);
+            this.txtDescription.Name = "txtDescription";
+            this.txtDescription.Size = new System.Drawing.Size(250, 20);
+            this.txtDescription.TabIndex = 4;
+            //
+            // lblCategory
+            //
+            this.lblCategory.AutoSize = true;
+            this.lblCategory.Location = new System.Drawing.Point(275, 325);
+            this.lblCategory.Name = "lblCategory";
+            this.lblCategory.Size = new System.Drawing.Size(49, 13);
+            this.lblCategory.TabIndex = 5;
+            this.lblCategory.Text = "Category";
+            //
+            // cmbCategory
+            // (items come from the BillCategory enum at runtime)
+            //
+            this.cmbCategory.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbCategory.Location = new System.Drawing.Point(275, 345);
+            this.cmbCategory.Name = "cmbCategory";
+            this.cmbCategory.Size = new System.Drawing.Size(110, 21);
+            this.cmbCategory.TabIndex = 6;
+            //
+            // lblWard
+            //
+            this.lblWard.AutoSize = true;
+            this.lblWard.Location = new System.Drawing.Point(395, 325);
+            this.lblWard.Name = "lblWard";
+            this.lblWard.Size = new System.Drawing.Size(33, 13);
+            this.lblWard.TabIndex = 7;
+            this.lblWard.Text = "Ward";
+            //
+            // cmbWard
+            //
+            this.cmbWard.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
+            this.cmbWard.Location = new System.Drawing.Point(395, 345);
+            this.cmbWard.Name = "cmbWard";
+            this.cmbWard.Size = new System.Drawing.Size(130, 21);
+            this.cmbWard.TabIndex = 8;
+            //
+            // lblUnitPrice
+            //
+            this.lblUnitPrice.AutoSize = true;
+            this.lblUnitPrice.Location = new System.Drawing.Point(535, 325);
+            this.lblUnitPrice.Name = "lblUnitPrice";
+            this.lblUnitPrice.Size = new System.Drawing.Size(53, 13);
+            this.lblUnitPrice.TabIndex = 9;
+            this.lblUnitPrice.Text = "Unit Price";
+            //
+            // numPrice
+            //
+            this.numPrice.DecimalPlaces = 2;
+            this.numPrice.Location = new System.Drawing.Point(535, 345);
+            this.numPrice.Maximum = new decimal(new int[] {
+            10000000,
+            0,
+            0,
+            0});
+            this.numPrice.Name = "numPrice";
+            this.numPrice.Size = new System.Drawing.Size(100, 20);
+            this.numPrice.TabIndex = 10;
+            this.numPrice.ThousandsSeparator = true;
+            //
+            // chkPerDay
+            //
+            this.chkPerDay.AutoSize = true;
+            this.chkPerDay.Location = new System.Drawing.Point(650, 347);
+            this.chkPerDay.Name = "chkPerDay";
+            this.chkPerDay.Size = new System.Drawing.Size(63, 17);
+            this.chkPerDay.TabIndex = 11;
+            this.chkPerDay.Text = "Per day";
+            //
+            // btnAdd
+            //
+            this.btnAdd.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnAdd.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnAdd.ForeColor = System.Drawing.Color.White;
+            this.btnAdd.Location = new System.Drawing.Point(15, 390);
+            this.btnAdd.Name = "btnAdd";
+            this.btnAdd.Size = new System.Drawing.Size(110, 30);
+            this.btnAdd.TabIndex = 12;
+            this.btnAdd.Text = "Add New";
+            this.btnAdd.UseVisualStyleBackColor = false;
+            this.btnAdd.Click += new System.EventHandler(this.BtnAdd_Click);
+            //
+            // btnUpdate
+            //
+            this.btnUpdate.Location = new System.Drawing.Point(135, 390);
+            this.btnUpdate.Name = "btnUpdate";
+            this.btnUpdate.Size = new System.Drawing.Size(110, 30);
+            this.btnUpdate.TabIndex = 13;
+            this.btnUpdate.Text = "Update Selected";
+            this.btnUpdate.UseVisualStyleBackColor = true;
+            this.btnUpdate.Click += new System.EventHandler(this.BtnUpdate_Click);
+            //
+            // btnToggle
+            //
+            this.btnToggle.Location = new System.Drawing.Point(255, 390);
+            this.btnToggle.Name = "btnToggle";
+            this.btnToggle.Size = new System.Drawing.Size(110, 30);
+            this.btnToggle.TabIndex = 14;
+            this.btnToggle.Text = "Deactivate";
+            this.btnToggle.UseVisualStyleBackColor = true;
+            this.btnToggle.Click += new System.EventHandler(this.BtnToggle_Click);
+            //
+            // btnClear
+            //
+            this.btnClear.Location = new System.Drawing.Point(375, 390);
+            this.btnClear.Name = "btnClear";
+            this.btnClear.Size = new System.Drawing.Size(110, 30);
+            this.btnClear.TabIndex = 15;
+            this.btnClear.Text = "Clear";
+            this.btnClear.UseVisualStyleBackColor = true;
+            this.btnClear.Click += new System.EventHandler(this.BtnClear_Click);
+            //
+            // btnClose
+            //
+            this.btnClose.DialogResult = System.Windows.Forms.DialogResult.OK;
+            this.btnClose.Location = new System.Drawing.Point(635, 435);
+            this.btnClose.Name = "btnClose";
+            this.btnClose.Size = new System.Drawing.Size(110, 30);
+            this.btnClose.TabIndex = 16;
+            this.btnClose.Text = "Close";
+            this.btnClose.UseVisualStyleBackColor = true;
+            //
+            // ChargeScheduleForm
+            //
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.BackColor = System.Drawing.Color.White;
+            this.CancelButton = this.btnClose;
+            this.ClientSize = new System.Drawing.Size(760, 480);
+            this.Controls.Add(this.lblInfo);
+            this.Controls.Add(this.chkShowInactive);
+            this.Controls.Add(this.grid);
+            this.Controls.Add(this.lblDescription);
+            this.Controls.Add(this.txtDescription);
+            this.Controls.Add(this.lblCategory);
+            this.Controls.Add(this.cmbCategory);
+            this.Controls.Add(this.lblWard);
+            this.Controls.Add(this.cmbWard);
+            this.Controls.Add(this.lblUnitPrice);
+            this.Controls.Add(this.numPrice);
+            this.Controls.Add(this.chkPerDay);
+            this.Controls.Add(this.btnAdd);
+            this.Controls.Add(this.btnUpdate);
+            this.Controls.Add(this.btnToggle);
+            this.Controls.Add(this.btnClear);
+            this.Controls.Add(this.btnClose);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
-            this.ClientSize = new Size(760, 480);
-            this.BackColor = Color.White;
+            this.MinimizeBox = false;
+            this.Name = "ChargeScheduleForm";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
+            this.Text = "Admission Charge Schedule";
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.numPrice)).EndInit();
+            this.ResumeLayout(false);
+            this.PerformLayout();
 
-            Label info = new Label();
-            info.Text = "These charges are added to a patient's bill automatically when they are admitted. " +
-                        "Per-day charges are updated to the full length of stay on discharge. " +
-                        "Price changes only affect bills generated afterwards.";
-            info.Location = new Point(15, 10);
-            info.Size = new Size(730, 32);
-            this.Controls.Add(info);
-
-            chkShowInactive = new CheckBox();
-            chkShowInactive.Text = "Show inactive";
-            chkShowInactive.Location = new Point(15, 45);
-            chkShowInactive.AutoSize = true;
-            chkShowInactive.CheckedChanged += (s, e) => LoadGrid();
-            this.Controls.Add(chkShowInactive);
-
-            grid = new DataGridView();
-            grid.Location = new Point(15, 70);
-            grid.Size = new Size(730, 240);
-            grid.AllowUserToAddRows = false;
-            grid.ReadOnly = true;
-            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            grid.MultiSelect = false;
-            grid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
-            grid.RowHeadersVisible = false;
-            grid.BackgroundColor = Color.White;
-            grid.SelectionChanged += Grid_SelectionChanged;
-            this.Controls.Add(grid);
-
-            this.Controls.Add(MakeLabel("Description", 15, 325));
-            txtDescription = new TextBox();
-            txtDescription.Location = new Point(15, 345);
-            txtDescription.Size = new Size(250, 28);
-            this.Controls.Add(txtDescription);
-
-            this.Controls.Add(MakeLabel("Category", 275, 325));
-            cmbCategory = new ComboBox();
-            cmbCategory.Location = new Point(275, 345);
-            cmbCategory.Size = new Size(110, 28);
-            cmbCategory.DropDownStyle = ComboBoxStyle.DropDownList;
-            cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
-            this.Controls.Add(cmbCategory);
-
-            this.Controls.Add(MakeLabel("Ward", 395, 325));
-            cmbWard = new ComboBox();
-            cmbWard.Location = new Point(395, 345);
-            cmbWard.Size = new Size(130, 28);
-            cmbWard.DropDownStyle = ComboBoxStyle.DropDownList;
-            this.Controls.Add(cmbWard);
-
-            this.Controls.Add(MakeLabel("Unit Price", 535, 325));
-            numPrice = new NumericUpDown();
-            numPrice.Location = new Point(535, 345);
-            numPrice.Size = new Size(100, 28);
-            numPrice.DecimalPlaces = 2;
-            numPrice.Maximum = 10000000;
-            numPrice.ThousandsSeparator = true;
-            this.Controls.Add(numPrice);
-
-            chkPerDay = new CheckBox();
-            chkPerDay.Text = "Per day";
-            chkPerDay.Location = new Point(650, 347);
-            chkPerDay.AutoSize = true;
-            this.Controls.Add(chkPerDay);
-
-            btnAdd = MakeButton("Add New", 15, 390);
-            btnAdd.BackColor = Color.FromArgb(37, 99, 235);
-            btnAdd.ForeColor = Color.White;
-            btnAdd.FlatStyle = FlatStyle.Flat;
-            btnAdd.Click += BtnAdd_Click;
-
-            btnUpdate = MakeButton("Update Selected", 135, 390);
-            btnUpdate.Click += BtnUpdate_Click;
-
-            btnToggle = MakeButton("Deactivate", 255, 390);
-            btnToggle.Click += BtnToggle_Click;
-
-            btnClear = MakeButton("Clear", 375, 390);
-            btnClear.Click += (s, e) => ClearFields();
-
-            btnClose = MakeButton("Close", 635, 435);
-            btnClose.DialogResult = DialogResult.OK;
-            this.CancelButton = btnClose;
         }
 
-        private Label MakeLabel(string text, int x, int y)
-        {
-            Label lbl = new Label();
-            lbl.Text = text;
-            lbl.Location = new Point(x, y);
-            lbl.AutoSize = true;
-            return lbl;
-        }
+        private void ChkShowInactive_CheckedChanged(object sender, EventArgs e) => LoadGrid();
 
-        private Button MakeButton(string text, int x, int y)
-        {
-            Button btn = new Button();
-            btn.Text = text;
-            btn.Location = new Point(x, y);
-            btn.Size = new Size(110, 30);
-            this.Controls.Add(btn);
-            return btn;
-        }
+        private void BtnClear_Click(object sender, EventArgs e) => ClearFields();
 
         // -------------------- Loading --------------------
         private void LoadWards()

@@ -12,10 +12,10 @@ namespace HospitalSystem.Forms
     {
         private Panel panelSidebar;
         private Panel panelContent;
+        private Label lblBrand;
         private Panel panelProfile;
-        private Label lblProfileName, lblProfileRole;
-        private string profileInitials = "";
-        private Color profileRoleColor = Color.Gray;
+        private Label lblProfileName;
+        private Label lblProfileRole;
         private Button btnDashboard;
         private Button btnPatients;
         private Button btnDoctors;
@@ -23,17 +23,25 @@ namespace HospitalSystem.Forms
         private Button btnAdmissions;
         private Button btnBilling;
         private Button btnActivityLog;
+        private Panel sepProfile;
+        private Panel sepNav1;
+        private Panel sepNav2;
+        private Panel sepNav3;
+        private Panel sepNav4;
+        private Panel sepNav5;
         private Panel sepActivityLog;
+        private Panel sepBottom;
         private Button btnSignOut;
+
+        private string profileInitials = "";
+        private Color profileRoleColor = Color.FromArgb(107, 114, 128);
         private UserControl currentView;
 
         public DashboardForm()
         {
+            // Every control is created in InitializeComponent() so the Designer shows the
+            // whole sidebar; only the data-driven dashboard content is built at runtime.
             InitializeComponent();
-
-            // Pure UI, no DB - safe (and desirable) to build even at design time
-            // so the sidebar actually renders in the Designer.
-            BuildSidebarNav();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -44,91 +52,18 @@ namespace HospitalSystem.Forms
             }
         }
 
-        // Builds the sidebar nav buttons via the CreateNavButton() helper.
-        // Kept out of InitializeComponent(): the Designer's InitializeComponent
-        // parser only understands flat control-creation statements, not calls
-        // into custom factory methods.
-        // Layout of the sidebar, top to bottom: brand (0-60), user profile (60-138),
-        // then the nav buttons from NavTop, one every NavStep px (42px button + 8px gap).
-        private const int ProfileTop = 60, ProfileHeight = 78;
-        private const int NavTop = 146, NavStep = 50;
-
-        private void BuildSidebarNav()
-        {
-            BuildProfilePanel();
-
-            btnDashboard = CreateNavButton("Dashboard", NavTop);
-            btnDashboard.Click += BtnDashboard_Click;
-            panelSidebar.Controls.Add(btnDashboard);
-
-            btnPatients = CreateNavButton("Patients", NavTop + NavStep);
-            btnPatients.Click += BtnPatients_Click;
-            panelSidebar.Controls.Add(btnPatients);
-
-            btnDoctors = CreateNavButton("Doctors", NavTop + NavStep * 2);
-            btnDoctors.Click += BtnDoctors_Click;
-            panelSidebar.Controls.Add(btnDoctors);
-
-            btnAppointments = CreateNavButton("Appointments", NavTop + NavStep * 3);
-            btnAppointments.Click += BtnAppointments_Click;
-            panelSidebar.Controls.Add(btnAppointments);
-
-            btnAdmissions = CreateNavButton("Admissions", NavTop + NavStep * 4);
-            btnAdmissions.Click += BtnAdmissions_Click;
-            panelSidebar.Controls.Add(btnAdmissions);
-
-            btnBilling = CreateNavButton("Billing", NavTop + NavStep * 5);
-            btnBilling.Click += BtnBilling_Click;
-            panelSidebar.Controls.Add(btnBilling);
-
-            // Administrators only; shown/hidden by ApplyUserAccess() on every sign-in.
-            // Last in the list, so hiding it never leaves a gap.
-            btnActivityLog = CreateNavButton("Activity Log", NavTop + NavStep * 6);
-            btnActivityLog.Click += BtnActivityLog_Click;
-            btnActivityLog.Visible = false;
-            panelSidebar.Controls.Add(btnActivityLog);
-
-            AddSidebarSeparators();
-        }
-
         // Signed-in user at the top of the sidebar: initials avatar, name, and a role badge
         // (amber for administrators, teal for nurses) so it's always clear whose view this is.
-        private void BuildProfilePanel()
+        private void PanelProfile_Paint(object sender, PaintEventArgs e)
         {
-            panelProfile = new Panel();
-            panelProfile.Location = new Point(0, ProfileTop);
-            panelProfile.Size = new Size(panelSidebar.Width, ProfileHeight);
-            panelProfile.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            panelProfile.BackColor = Color.FromArgb(37, 64, 150);
-            panelProfile.Paint += (s, e) =>
-            {
-                var g = e.Graphics;
-                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-                var circle = new Rectangle(16, 17, 44, 44);
-                using (var fill = new SolidBrush(profileRoleColor))
-                    g.FillEllipse(fill, circle);
-                using (var font = new Font("Segoe UI", 12F, FontStyle.Bold))
-                using (var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
-                    g.DrawString(profileInitials, font, Brushes.White, circle, center);
-            };
-            panelSidebar.Controls.Add(panelProfile);
-
-            lblProfileName = new Label();
-            lblProfileName.Location = new Point(70, 16);
-            lblProfileName.Size = new Size(panelSidebar.Width - 80, 22);
-            lblProfileName.AutoEllipsis = true;
-            lblProfileName.ForeColor = Color.White;
-            lblProfileName.BackColor = Color.Transparent;
-            lblProfileName.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-            panelProfile.Controls.Add(lblProfileName);
-
-            lblProfileRole = new Label();
-            lblProfileRole.Location = new Point(70, 42);
-            lblProfileRole.AutoSize = true;
-            lblProfileRole.Padding = new Padding(6, 2, 6, 2);
-            lblProfileRole.ForeColor = Color.White;
-            lblProfileRole.Font = new Font("Segoe UI", 8F, FontStyle.Bold);
-            panelProfile.Controls.Add(lblProfileRole);
+            var g = e.Graphics;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+            var circle = new Rectangle(16, 17, 44, 44);
+            using (var fill = new SolidBrush(profileRoleColor))
+                g.FillEllipse(fill, circle);
+            using (var font = new Font("Segoe UI", 12F, FontStyle.Bold))
+            using (var center = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                g.DrawString(profileInitials, font, Brushes.White, circle, center);
         }
 
         private static string Initials(string name)
@@ -138,47 +73,6 @@ namespace HospitalSystem.Forms
             return parts.Length == 1
                 ? parts[0].Substring(0, 1).ToUpper()
                 : (parts[0].Substring(0, 1) + parts[parts.Length - 1].Substring(0, 1)).ToUpper();
-        }
-
-        // Thin divider lines in the sidebar.
-        // Purely decorative: these are 1px panels layered into the existing gaps,
-        // so no button position, click handler or data path is touched.
-        private void AddSidebarSeparators()
-        {
-            // under the user profile, above the first nav button
-            panelSidebar.Controls.Add(CreateSeparator(NavTop - 5, true));
-
-            // between the nav buttons - each is 42px tall with an 8px gap after it
-            for (int i = 1; i <= 5; i++)
-                panelSidebar.Controls.Add(CreateSeparator(NavTop + NavStep * i - 4, false));
-
-            sepActivityLog = CreateSeparator(NavTop + NavStep * 6 - 4, false);
-            sepActivityLog.Visible = false;
-            panelSidebar.Controls.Add(sepActivityLog);
-
-            // above the sign-out button pinned at the bottom
-            Panel bottomLine = new Panel();
-            bottomLine.Height = 1;
-            bottomLine.Dock = DockStyle.Bottom;
-            bottomLine.BackColor = Color.FromArgb(78, 115, 205);
-            panelSidebar.Controls.Add(bottomLine);
-
-            // dock last so it lands above btnSignOut, not below it
-            bottomLine.BringToFront();
-        }
-
-        private Panel CreateSeparator(int top, bool strong)
-        {
-            Panel line = new Panel();
-            line.Height = 1;
-            line.Left = 16;
-            line.Width = panelSidebar.Width - 32;
-            line.Top = top;
-            line.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            line.BackColor = strong
-                ? Color.FromArgb(78, 115, 205)
-                : Color.FromArgb(52, 82, 165);
-            return line;
         }
 
         // Shows who is signed in and which modules their role can open.
@@ -231,54 +125,366 @@ namespace HospitalSystem.Forms
             }
         }
 
+        // Designer-generated layout. Sidebar, top to bottom: brand (0-60), user profile (60-138),
+        // nav buttons every 50px from y=146 (42px button + 8px gap, 1px separator in the gap),
+        // and Sign Out docked at the bottom. Activity Log (y=446) is hidden for non-admins at runtime.
         private void InitializeComponent()
         {
+            this.panelSidebar = new System.Windows.Forms.Panel();
+            this.btnActivityLog = new System.Windows.Forms.Button();
+            this.btnBilling = new System.Windows.Forms.Button();
+            this.btnAdmissions = new System.Windows.Forms.Button();
+            this.btnAppointments = new System.Windows.Forms.Button();
+            this.btnDoctors = new System.Windows.Forms.Button();
+            this.btnPatients = new System.Windows.Forms.Button();
+            this.btnDashboard = new System.Windows.Forms.Button();
+            this.sepActivityLog = new System.Windows.Forms.Panel();
+            this.sepNav5 = new System.Windows.Forms.Panel();
+            this.sepNav4 = new System.Windows.Forms.Panel();
+            this.sepNav3 = new System.Windows.Forms.Panel();
+            this.sepNav2 = new System.Windows.Forms.Panel();
+            this.sepNav1 = new System.Windows.Forms.Panel();
+            this.sepProfile = new System.Windows.Forms.Panel();
+            this.panelProfile = new System.Windows.Forms.Panel();
+            this.lblProfileRole = new System.Windows.Forms.Label();
+            this.lblProfileName = new System.Windows.Forms.Label();
+            this.sepBottom = new System.Windows.Forms.Panel();
+            this.btnSignOut = new System.Windows.Forms.Button();
+            this.lblBrand = new System.Windows.Forms.Label();
+            this.panelContent = new System.Windows.Forms.Panel();
+            this.panelSidebar.SuspendLayout();
+            this.panelProfile.SuspendLayout();
+            this.SuspendLayout();
+            // 
+            // panelSidebar
+            // 
+            this.panelSidebar.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.panelSidebar.Controls.Add(this.btnActivityLog);
+            this.panelSidebar.Controls.Add(this.btnBilling);
+            this.panelSidebar.Controls.Add(this.btnAdmissions);
+            this.panelSidebar.Controls.Add(this.btnAppointments);
+            this.panelSidebar.Controls.Add(this.btnDoctors);
+            this.panelSidebar.Controls.Add(this.btnPatients);
+            this.panelSidebar.Controls.Add(this.btnDashboard);
+            this.panelSidebar.Controls.Add(this.sepActivityLog);
+            this.panelSidebar.Controls.Add(this.sepNav5);
+            this.panelSidebar.Controls.Add(this.sepNav4);
+            this.panelSidebar.Controls.Add(this.sepNav3);
+            this.panelSidebar.Controls.Add(this.sepNav2);
+            this.panelSidebar.Controls.Add(this.sepNav1);
+            this.panelSidebar.Controls.Add(this.sepProfile);
+            this.panelSidebar.Controls.Add(this.panelProfile);
+            this.panelSidebar.Controls.Add(this.sepBottom);
+            this.panelSidebar.Controls.Add(this.btnSignOut);
+            this.panelSidebar.Controls.Add(this.lblBrand);
+            this.panelSidebar.Dock = System.Windows.Forms.DockStyle.Left;
+            this.panelSidebar.Location = new System.Drawing.Point(0, 0);
+            this.panelSidebar.Name = "panelSidebar";
+            this.panelSidebar.Size = new System.Drawing.Size(220, 749);
+            this.panelSidebar.TabIndex = 0;
+            // 
+            // btnActivityLog
+            // 
+            this.btnActivityLog.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnActivityLog.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnActivityLog.FlatAppearance.BorderSize = 0;
+            this.btnActivityLog.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnActivityLog.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnActivityLog.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnActivityLog.ForeColor = System.Drawing.Color.White;
+            this.btnActivityLog.Location = new System.Drawing.Point(0, 446);
+            this.btnActivityLog.Name = "btnActivityLog";
+            this.btnActivityLog.Size = new System.Drawing.Size(220, 42);
+            this.btnActivityLog.TabIndex = 15;
+            this.btnActivityLog.Text = "  Activity Log";
+            this.btnActivityLog.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnActivityLog.UseVisualStyleBackColor = false;
+            this.btnActivityLog.Click += new System.EventHandler(this.BtnActivityLog_Click);
+            // 
+            // btnBilling
+            // 
+            this.btnBilling.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnBilling.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnBilling.FlatAppearance.BorderSize = 0;
+            this.btnBilling.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnBilling.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnBilling.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnBilling.ForeColor = System.Drawing.Color.White;
+            this.btnBilling.Location = new System.Drawing.Point(0, 396);
+            this.btnBilling.Name = "btnBilling";
+            this.btnBilling.Size = new System.Drawing.Size(220, 42);
+            this.btnBilling.TabIndex = 13;
+            this.btnBilling.Text = "  Billing";
+            this.btnBilling.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnBilling.UseVisualStyleBackColor = false;
+            this.btnBilling.Click += new System.EventHandler(this.BtnBilling_Click);
+            // 
+            // btnAdmissions
+            // 
+            this.btnAdmissions.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnAdmissions.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnAdmissions.FlatAppearance.BorderSize = 0;
+            this.btnAdmissions.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnAdmissions.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnAdmissions.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnAdmissions.ForeColor = System.Drawing.Color.White;
+            this.btnAdmissions.Location = new System.Drawing.Point(0, 346);
+            this.btnAdmissions.Name = "btnAdmissions";
+            this.btnAdmissions.Size = new System.Drawing.Size(220, 42);
+            this.btnAdmissions.TabIndex = 11;
+            this.btnAdmissions.Text = "  Admissions";
+            this.btnAdmissions.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnAdmissions.UseVisualStyleBackColor = false;
+            this.btnAdmissions.Click += new System.EventHandler(this.BtnAdmissions_Click);
+            // 
+            // btnAppointments
+            // 
+            this.btnAppointments.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnAppointments.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnAppointments.FlatAppearance.BorderSize = 0;
+            this.btnAppointments.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnAppointments.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnAppointments.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnAppointments.ForeColor = System.Drawing.Color.White;
+            this.btnAppointments.Location = new System.Drawing.Point(0, 296);
+            this.btnAppointments.Name = "btnAppointments";
+            this.btnAppointments.Size = new System.Drawing.Size(220, 42);
+            this.btnAppointments.TabIndex = 9;
+            this.btnAppointments.Text = "  Appointments";
+            this.btnAppointments.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnAppointments.UseVisualStyleBackColor = false;
+            this.btnAppointments.Click += new System.EventHandler(this.BtnAppointments_Click);
+            // 
+            // btnDoctors
+            // 
+            this.btnDoctors.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnDoctors.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnDoctors.FlatAppearance.BorderSize = 0;
+            this.btnDoctors.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnDoctors.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnDoctors.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnDoctors.ForeColor = System.Drawing.Color.White;
+            this.btnDoctors.Location = new System.Drawing.Point(0, 246);
+            this.btnDoctors.Name = "btnDoctors";
+            this.btnDoctors.Size = new System.Drawing.Size(220, 42);
+            this.btnDoctors.TabIndex = 7;
+            this.btnDoctors.Text = "  Doctors";
+            this.btnDoctors.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnDoctors.UseVisualStyleBackColor = false;
+            this.btnDoctors.Click += new System.EventHandler(this.BtnDoctors_Click);
+            // 
+            // btnPatients
+            // 
+            this.btnPatients.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnPatients.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnPatients.FlatAppearance.BorderSize = 0;
+            this.btnPatients.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnPatients.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnPatients.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnPatients.ForeColor = System.Drawing.Color.White;
+            this.btnPatients.Location = new System.Drawing.Point(0, 196);
+            this.btnPatients.Name = "btnPatients";
+            this.btnPatients.Size = new System.Drawing.Size(220, 42);
+            this.btnPatients.TabIndex = 5;
+            this.btnPatients.Text = "  Patients";
+            this.btnPatients.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnPatients.UseVisualStyleBackColor = false;
+            this.btnPatients.Click += new System.EventHandler(this.BtnPatients_Click);
+            // 
+            // btnDashboard
+            // 
+            this.btnDashboard.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnDashboard.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnDashboard.FlatAppearance.BorderSize = 0;
+            this.btnDashboard.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnDashboard.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnDashboard.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnDashboard.ForeColor = System.Drawing.Color.White;
+            this.btnDashboard.Location = new System.Drawing.Point(0, 146);
+            this.btnDashboard.Name = "btnDashboard";
+            this.btnDashboard.Size = new System.Drawing.Size(220, 42);
+            this.btnDashboard.TabIndex = 3;
+            this.btnDashboard.Text = "  Dashboard";
+            this.btnDashboard.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnDashboard.UseVisualStyleBackColor = false;
+            this.btnDashboard.Click += new System.EventHandler(this.BtnDashboard_Click);
+            // 
+            // sepActivityLog
+            // 
+            this.sepActivityLog.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepActivityLog.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepActivityLog.Location = new System.Drawing.Point(16, 442);
+            this.sepActivityLog.Name = "sepActivityLog";
+            this.sepActivityLog.Size = new System.Drawing.Size(188, 1);
+            this.sepActivityLog.TabIndex = 14;
+            // 
+            // sepNav5
+            // 
+            this.sepNav5.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepNav5.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepNav5.Location = new System.Drawing.Point(16, 392);
+            this.sepNav5.Name = "sepNav5";
+            this.sepNav5.Size = new System.Drawing.Size(188, 1);
+            this.sepNav5.TabIndex = 12;
+            // 
+            // sepNav4
+            // 
+            this.sepNav4.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepNav4.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepNav4.Location = new System.Drawing.Point(16, 342);
+            this.sepNav4.Name = "sepNav4";
+            this.sepNav4.Size = new System.Drawing.Size(188, 1);
+            this.sepNav4.TabIndex = 10;
+            // 
+            // sepNav3
+            // 
+            this.sepNav3.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepNav3.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepNav3.Location = new System.Drawing.Point(16, 292);
+            this.sepNav3.Name = "sepNav3";
+            this.sepNav3.Size = new System.Drawing.Size(188, 1);
+            this.sepNav3.TabIndex = 8;
+            // 
+            // sepNav2
+            // 
+            this.sepNav2.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepNav2.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepNav2.Location = new System.Drawing.Point(16, 242);
+            this.sepNav2.Name = "sepNav2";
+            this.sepNav2.Size = new System.Drawing.Size(188, 1);
+            this.sepNav2.TabIndex = 6;
+            // 
+            // sepNav1
+            // 
+            this.sepNav1.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepNav1.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepNav1.Location = new System.Drawing.Point(16, 192);
+            this.sepNav1.Name = "sepNav1";
+            this.sepNav1.Size = new System.Drawing.Size(188, 1);
+            this.sepNav1.TabIndex = 4;
+            // 
+            // sepProfile
+            // 
+            this.sepProfile.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepProfile.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(78)))), ((int)(((byte)(115)))), ((int)(((byte)(205)))));
+            this.sepProfile.Location = new System.Drawing.Point(16, 141);
+            this.sepProfile.Name = "sepProfile";
+            this.sepProfile.Size = new System.Drawing.Size(188, 1);
+            this.sepProfile.TabIndex = 2;
+            // 
+            // panelProfile
+            // 
+            this.panelProfile.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.panelProfile.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(64)))), ((int)(((byte)(150)))));
+            this.panelProfile.Controls.Add(this.lblProfileRole);
+            this.panelProfile.Controls.Add(this.lblProfileName);
+            this.panelProfile.Location = new System.Drawing.Point(0, 60);
+            this.panelProfile.Name = "panelProfile";
+            this.panelProfile.Size = new System.Drawing.Size(220, 78);
+            this.panelProfile.TabIndex = 1;
+            this.panelProfile.Paint += new System.Windows.Forms.PaintEventHandler(this.PanelProfile_Paint);
+            // 
+            // lblProfileRole
+            // 
+            this.lblProfileRole.AutoSize = true;
+            this.lblProfileRole.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
+            this.lblProfileRole.Font = new System.Drawing.Font("Segoe UI", 8F, System.Drawing.FontStyle.Bold);
+            this.lblProfileRole.ForeColor = System.Drawing.Color.White;
+            this.lblProfileRole.Location = new System.Drawing.Point(70, 42);
+            this.lblProfileRole.Name = "lblProfileRole";
+            this.lblProfileRole.Padding = new System.Windows.Forms.Padding(6, 2, 6, 2);
+            this.lblProfileRole.Size = new System.Drawing.Size(42, 17);
+            this.lblProfileRole.TabIndex = 1;
+            this.lblProfileRole.Text = "Role";
+            // 
+            // lblProfileName
+            // 
+            this.lblProfileName.AutoEllipsis = true;
+            this.lblProfileName.BackColor = System.Drawing.Color.Transparent;
+            this.lblProfileName.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            this.lblProfileName.ForeColor = System.Drawing.Color.White;
+            this.lblProfileName.Location = new System.Drawing.Point(70, 16);
+            this.lblProfileName.Name = "lblProfileName";
+            this.lblProfileName.Size = new System.Drawing.Size(140, 22);
+            this.lblProfileName.TabIndex = 0;
+            this.lblProfileName.Text = "User Name";
+            // 
+            // sepBottom
+            // 
+            this.sepBottom.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(78)))), ((int)(((byte)(115)))), ((int)(((byte)(205)))));
+            this.sepBottom.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.sepBottom.Location = new System.Drawing.Point(0, 703);
+            this.sepBottom.Name = "sepBottom";
+            this.sepBottom.Size = new System.Drawing.Size(220, 1);
+            this.sepBottom.TabIndex = 16;
+            // 
+            // btnSignOut
+            // 
+            this.btnSignOut.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnSignOut.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnSignOut.Dock = System.Windows.Forms.DockStyle.Bottom;
+            this.btnSignOut.FlatAppearance.BorderSize = 0;
+            this.btnSignOut.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(185)))), ((int)(((byte)(28)))), ((int)(((byte)(28)))));
+            this.btnSignOut.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnSignOut.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnSignOut.ForeColor = System.Drawing.Color.White;
+            this.btnSignOut.Location = new System.Drawing.Point(0, 704);
+            this.btnSignOut.Name = "btnSignOut";
+            this.btnSignOut.Size = new System.Drawing.Size(220, 45);
+            this.btnSignOut.TabIndex = 17;
+            this.btnSignOut.Text = "  Sign Out";
+            this.btnSignOut.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnSignOut.UseVisualStyleBackColor = false;
+            this.btnSignOut.Click += new System.EventHandler(this.BtnSignOut_Click);
+            // 
+            // lblBrand
+            // 
+            this.lblBrand.Dock = System.Windows.Forms.DockStyle.Top;
+            this.lblBrand.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
+            this.lblBrand.ForeColor = System.Drawing.Color.White;
+            this.lblBrand.Location = new System.Drawing.Point(0, 0);
+            this.lblBrand.Name = "lblBrand";
+            this.lblBrand.Size = new System.Drawing.Size(220, 60);
+            this.lblBrand.TabIndex = 0;
+            this.lblBrand.Text = "  Hospital System";
+            this.lblBrand.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            // 
+            // panelContent
+            // 
+            this.panelContent.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
+            this.panelContent.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.panelContent.Location = new System.Drawing.Point(220, 0);
+            this.panelContent.Name = "panelContent";
+            this.panelContent.Padding = new System.Windows.Forms.Padding(18);
+            this.panelContent.Size = new System.Drawing.Size(1044, 749);
+            this.panelContent.TabIndex = 1;
+            // 
+            // DashboardForm
+            // 
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
+            this.ClientSize = new System.Drawing.Size(1264, 749);
+            this.Controls.Add(this.panelContent);
+            this.Controls.Add(this.panelSidebar);
+            this.MinimumSize = new System.Drawing.Size(1100, 718);
+            this.Name = "DashboardForm";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             this.Text = "Hospital System";
-            this.Size = new Size(1280, 850);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.MinimumSize = new Size(1100, 750);
-            this.BackColor = Color.FromArgb(243, 244, 246);
+            this.Load += new System.EventHandler(this.DashboardForm_Load);
+            this.panelSidebar.ResumeLayout(false);
+            this.panelProfile.ResumeLayout(false);
+            this.panelProfile.PerformLayout();
+            this.ResumeLayout(false);
 
-            // ===== Sidebar =====
-            panelSidebar = new Panel();
-            panelSidebar.Dock = DockStyle.Left;
-            panelSidebar.Width = 220;
-            panelSidebar.BackColor = Color.FromArgb(30, 58, 138);
-            this.Controls.Add(panelSidebar);
-
-            Label lblBrand = new Label();
-            lblBrand.Text = "  Hospital System";
-            lblBrand.Font = new Font("Segoe UI", 12F, FontStyle.Bold);
-            lblBrand.ForeColor = Color.White;
-            lblBrand.Dock = DockStyle.Top;
-            lblBrand.Height = 60;
-            lblBrand.TextAlign = ContentAlignment.MiddleLeft;
-            panelSidebar.Controls.Add(lblBrand);
-
-            btnSignOut = new Button();
-            btnSignOut.Text = "  Sign Out";
-            btnSignOut.FlatStyle = FlatStyle.Flat;
-            btnSignOut.FlatAppearance.BorderSize = 0;
-            btnSignOut.BackColor = Color.FromArgb(30, 58, 138);
-            btnSignOut.ForeColor = Color.White;
-            btnSignOut.Font = new Font("Segoe UI", 10F);
-            btnSignOut.TextAlign = ContentAlignment.MiddleLeft;
-            btnSignOut.Height = 45;
-            btnSignOut.Dock = DockStyle.Bottom;
-            btnSignOut.Cursor = Cursors.Hand;
-            btnSignOut.FlatAppearance.MouseOverBackColor = Color.FromArgb(185, 28, 28);
-            btnSignOut.Click += BtnSignOut_Click;
-            panelSidebar.Controls.Add(btnSignOut);
-
-            // ===== Content area =====
-            panelContent = new Panel();
-            panelContent.Dock = DockStyle.Fill;
-            panelContent.Padding = new Padding(18);
-            panelContent.BackColor = Color.FromArgb(243, 244, 246);
-            this.Controls.Add(panelContent);
-
-            this.Load += DashboardForm_Load;
-            panelContent.BringToFront();
         }
 
         private static readonly Color Navy = Color.FromArgb(30, 58, 138);
@@ -1022,24 +1228,6 @@ namespace HospitalSystem.Forms
                 result[5 - i] = (month.ToString("MMM"), count);
             }
             return result;
-        }
-
-        private Button CreateNavButton(string text, int top)
-        {
-            Button btn = new Button();
-            btn.Text = "  " + text;
-            btn.FlatStyle = FlatStyle.Flat;
-            btn.FlatAppearance.BorderSize = 0;
-            btn.BackColor = Color.FromArgb(30, 58, 138);
-            btn.ForeColor = Color.White;
-            btn.Font = new Font("Segoe UI", 10F);
-            btn.TextAlign = ContentAlignment.MiddleLeft;
-            btn.Height = 42;
-            btn.Width = 220;
-            btn.Location = new Point(0, top);
-            btn.Cursor = Cursors.Hand;
-            btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(37, 99, 235);
-            return btn;
         }
 
         private void ShowView(UserControl view)

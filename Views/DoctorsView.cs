@@ -15,21 +15,31 @@ namespace HospitalSystem.Views
         private const string SearchPlaceholder = "Search doctors by ID, name, specialization...";
 
         private DataGridView grid;
+        private DataGridViewTextBoxColumn colId;
+        private DataGridViewTextBoxColumn colNo;
+        private DataGridViewTextBoxColumn colName;
+        private DataGridViewTextBoxColumn colSpecialization;
+        private DataGridViewTextBoxColumn colDepartment;
+        private DataGridViewTextBoxColumn colContact;
+        private DataGridViewTextBoxColumn colStatus;
+        private DataGridViewButtonColumn colEdit;
+        private DataGridViewButtonColumn colAction;
+        private Panel header;
+        private Label lblList;
         private TextBox txtSearch;
-        private Button btnSearch, btnClear, btnNew;
+        private Button btnSearch;
+        private Button btnClear;
+        private Button btnNew;
+        private Label lblViewOnly;
         private CheckBox chkShowInactive;
         private Label lblCount;
         private bool searchPlaceholderActive = true;
 
         public DoctorsView()
         {
+            // Every control, grid column and event is set up in InitializeComponent()
+            // (Designer format), so the Designer shows the complete screen.
             InitializeComponent();
-
-            // Pure UI, no DB - safe (and desirable) to run even at design time
-            // so the Designer shows real grid columns and the search placeholder.
-            BuildGridColumns();
-            SetupSearchPlaceholder();
-            WireEvents();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -45,37 +55,11 @@ namespace HospitalSystem.Views
         {
             bool manage = Permissions.Can(Permission.ManageDoctors);
             btnNew.Visible = manage;
-            if (grid.Columns["colEdit"] != null) grid.Columns["colEdit"].Visible = manage;
-            if (grid.Columns["colAction"] != null) grid.Columns["colAction"].Visible = manage;
-
+            colEdit.Visible = manage;
+            colAction.Visible = manage;
+            lblViewOnly.Visible = !manage;
             if (!manage)
-            {
-                btnNew.Parent.Controls.Add(new Label
-                {
-                    Text = "View only — doctor records are managed by administrators",
-                    Location = new Point(btnNew.Left, btnNew.Top + 8),
-                    AutoSize = true,
-                    Font = new Font("Segoe UI", 8.5F, FontStyle.Italic),
-                    ForeColor = Color.FromArgb(107, 114, 128)
-                });
-                chkShowInactive.Left = btnNew.Left + 340;
-            }
-        }
-
-        // Deliberately kept OUT of InitializeComponent(): the WinForms Designer
-        // only tracks event/property wiring made through its own component model.
-        // Anything wired here in plain code survives a future Designer save intact;
-        // anything left inside InitializeComponent() risks being silently dropped
-        // the next time the form is opened and saved in the Designer.
-        private void WireEvents()
-        {
-            btnSearch.Click += BtnSearch_Click;
-            btnClear.Click += BtnClear_Click;
-            btnNew.Click += BtnNewDoctor_Click;
-            chkShowInactive.CheckedChanged += (s, e) => LoadDoctors(GetSearchText());
-            txtSearch.KeyDown += TxtSearch_KeyDown;
-            grid.CellClick += Grid_CellClick;
-            grid.CellFormatting += Grid_CellFormatting;
+                chkShowInactive.Left = lblViewOnly.Right + 20;
         }
 
         private void BtnSearch_Click(object sender, EventArgs e) => LoadDoctors(GetSearchText());
@@ -88,176 +72,279 @@ namespace HospitalSystem.Views
 
         private void BtnNewDoctor_Click(object sender, EventArgs e) => OpenEditForm(null);
 
+        private void ChkShowInactive_CheckedChanged(object sender, EventArgs e) => LoadDoctors(GetSearchText());
+
+        // Designer-generated layout: header (title, search, buttons, "show inactive", count)
+        // and the doctor grid with fixed columns (AutoGenerateColumns = false). The two button
+        // columns (Edit, Deactivate/Activate) and "+ New Doctor" are hidden for nurses at runtime,
+        // when the "View only" note is shown instead.
         private void InitializeComponent()
         {
-            this.Dock = DockStyle.Fill;
-            this.BackColor = Color.FromArgb(243, 244, 246);
-            this.Padding = new Padding(15);
-
-            // ===================== Header: title + search + actions =====================
-            Panel header = new Panel();
-            header.Dock = DockStyle.Top;
-            header.Height = 90;
-            this.Controls.Add(header);
-
-            Label lblList = new Label();
-            lblList.Text = "Doctors";
-            lblList.Font = new Font("Segoe UI", 13F, FontStyle.Bold);
-            lblList.ForeColor = Color.FromArgb(30, 41, 59);
-            lblList.Location = new Point(0, 0);
-            lblList.AutoSize = true;
-            header.Controls.Add(lblList);
-
-            txtSearch = new TextBox();
-            txtSearch.Location = new Point(0, 36);
-            txtSearch.Size = new Size(360, 30);
-            txtSearch.Font = new Font("Segoe UI", 10F);
-            header.Controls.Add(txtSearch);
-
-            btnSearch = new Button();
-            btnSearch.Text = "Search";
-            btnSearch.Location = new Point(368, 35);
-            btnSearch.Size = new Size(85, 32);
-            btnSearch.BackColor = Color.FromArgb(37, 99, 235);
-            btnSearch.ForeColor = Color.White;
-            btnSearch.FlatStyle = FlatStyle.Flat;
-            btnSearch.FlatAppearance.BorderSize = 0;
-            btnSearch.Cursor = Cursors.Hand;
-            header.Controls.Add(btnSearch);
-
-            btnClear = new Button();
-            btnClear.Text = "Clear";
-            btnClear.Location = new Point(461, 35);
-            btnClear.Size = new Size(75, 32);
-            btnClear.FlatStyle = FlatStyle.Flat;
-            btnClear.Cursor = Cursors.Hand;
-            header.Controls.Add(btnClear);
-
-            btnNew = new Button();
-            btnNew.Text = "+ New Doctor";
-            btnNew.Location = new Point(544, 35);
-            btnNew.Size = new Size(140, 32);
-            btnNew.BackColor = Color.FromArgb(5, 150, 105);
-            btnNew.ForeColor = Color.White;
-            btnNew.FlatStyle = FlatStyle.Flat;
-            btnNew.FlatAppearance.BorderSize = 0;
-            btnNew.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
-            btnNew.Cursor = Cursors.Hand;
-            header.Controls.Add(btnNew);
-
-            chkShowInactive = new CheckBox();
-            chkShowInactive.Text = "Show inactive";
-            chkShowInactive.Location = new Point(700, 41);
-            chkShowInactive.AutoSize = true;
-            chkShowInactive.Font = new Font("Segoe UI", 9F);
-            chkShowInactive.ForeColor = Color.FromArgb(75, 85, 99);
-            chkShowInactive.Cursor = Cursors.Hand;
-            header.Controls.Add(chkShowInactive);
-
-            lblCount = new Label();
-            lblCount.Location = new Point(0, 72);
-            lblCount.AutoSize = true;
-            lblCount.Font = new Font("Segoe UI", 8.5F);
-            lblCount.ForeColor = Color.FromArgb(107, 114, 128);
-            header.Controls.Add(lblCount);
-
-            // ===================== Doctor List (full width) =====================
-            grid = new DataGridView();
-            grid.Dock = DockStyle.Fill;
-            grid.AllowUserToAddRows = false;
-            grid.AllowUserToDeleteRows = false;
-            grid.ReadOnly = true;
-            grid.AutoGenerateColumns = false;
-            grid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
-            grid.MultiSelect = false;
-            grid.RowHeadersVisible = false;
-            grid.BackgroundColor = Color.White;
-            grid.BorderStyle = BorderStyle.FixedSingle;
-            grid.AllowUserToResizeRows = false;
-            this.Controls.Add(grid);
-            grid.BringToFront();
-        }
-
-        private void BuildGridColumns()
-        {
-            // Must be false: this grid uses manually defined columns (including two
-            // unbound Action button columns). Left as the DataGridView default (true),
-            // the grid regenerates its own columns from DataSource on every bind,
-            // scrambling column order and fighting these definitions.
-            grid.AutoGenerateColumns = false;
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn { Name = "colId", DataPropertyName = "Id", Visible = false });
-
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colNo",
-                HeaderText = "Doctor ID",
-                DataPropertyName = "No",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 100
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colName",
-                HeaderText = "Full Name",
-                DataPropertyName = "Name",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill,
-                MinimumWidth = 160
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colSpecialization",
-                HeaderText = "Specialization",
-                DataPropertyName = "Specialization",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 150
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colDepartment",
-                HeaderText = "Department",
-                DataPropertyName = "Department",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 140
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colContact",
-                HeaderText = "Contact",
-                DataPropertyName = "Contact",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 125
-            });
-            grid.Columns.Add(new DataGridViewTextBoxColumn
-            {
-                Name = "colStatus",
-                HeaderText = "Status",
-                DataPropertyName = "Status",
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 85
-            });
-
-            grid.Columns.Add(new DataGridViewButtonColumn
-            {
-                Name = "colEdit",
-                HeaderText = "Actions",
-                Text = "Edit",
-                UseColumnTextForButtonValue = true,
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 80,
-                FlatStyle = FlatStyle.Flat
-            });
+            this.header = new System.Windows.Forms.Panel();
+            this.lblList = new System.Windows.Forms.Label();
+            this.txtSearch = new System.Windows.Forms.TextBox();
+            this.btnSearch = new System.Windows.Forms.Button();
+            this.btnClear = new System.Windows.Forms.Button();
+            this.btnNew = new System.Windows.Forms.Button();
+            this.lblViewOnly = new System.Windows.Forms.Label();
+            this.chkShowInactive = new System.Windows.Forms.CheckBox();
+            this.lblCount = new System.Windows.Forms.Label();
+            this.grid = new System.Windows.Forms.DataGridView();
+            this.colId = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colNo = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colName = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colSpecialization = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colDepartment = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colContact = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colStatus = new System.Windows.Forms.DataGridViewTextBoxColumn();
+            this.colEdit = new System.Windows.Forms.DataGridViewButtonColumn();
+            this.colAction = new System.Windows.Forms.DataGridViewButtonColumn();
+            this.header.SuspendLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).BeginInit();
+            this.SuspendLayout();
+            //
+            // header
+            //
+            this.header.Controls.Add(this.lblList);
+            this.header.Controls.Add(this.txtSearch);
+            this.header.Controls.Add(this.btnSearch);
+            this.header.Controls.Add(this.btnClear);
+            this.header.Controls.Add(this.btnNew);
+            this.header.Controls.Add(this.lblViewOnly);
+            this.header.Controls.Add(this.chkShowInactive);
+            this.header.Controls.Add(this.lblCount);
+            this.header.Dock = System.Windows.Forms.DockStyle.Top;
+            this.header.Location = new System.Drawing.Point(15, 15);
+            this.header.Name = "header";
+            this.header.Size = new System.Drawing.Size(994, 90);
+            this.header.TabIndex = 0;
+            //
+            // lblList
+            //
+            this.lblList.AutoSize = true;
+            this.lblList.Font = new System.Drawing.Font("Segoe UI", 13F, System.Drawing.FontStyle.Bold);
+            this.lblList.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(41)))), ((int)(((byte)(59)))));
+            this.lblList.Location = new System.Drawing.Point(0, 0);
+            this.lblList.Name = "lblList";
+            this.lblList.Size = new System.Drawing.Size(76, 25);
+            this.lblList.TabIndex = 0;
+            this.lblList.Text = "Doctors";
+            //
+            // txtSearch
+            //
+            this.txtSearch.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.txtSearch.ForeColor = System.Drawing.Color.Gray;
+            this.txtSearch.Location = new System.Drawing.Point(0, 36);
+            this.txtSearch.Name = "txtSearch";
+            this.txtSearch.Size = new System.Drawing.Size(360, 25);
+            this.txtSearch.TabIndex = 1;
+            this.txtSearch.Text = "Search doctors by ID, name, specialization...";
+            this.txtSearch.Enter += new System.EventHandler(this.TxtSearch_Enter);
+            this.txtSearch.KeyDown += new System.Windows.Forms.KeyEventHandler(this.TxtSearch_KeyDown);
+            this.txtSearch.Leave += new System.EventHandler(this.TxtSearch_Leave);
+            //
+            // btnSearch
+            //
+            this.btnSearch.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnSearch.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnSearch.FlatAppearance.BorderSize = 0;
+            this.btnSearch.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnSearch.ForeColor = System.Drawing.Color.White;
+            this.btnSearch.Location = new System.Drawing.Point(368, 35);
+            this.btnSearch.Name = "btnSearch";
+            this.btnSearch.Size = new System.Drawing.Size(85, 32);
+            this.btnSearch.TabIndex = 2;
+            this.btnSearch.Text = "Search";
+            this.btnSearch.UseVisualStyleBackColor = false;
+            this.btnSearch.Click += new System.EventHandler(this.BtnSearch_Click);
+            //
+            // btnClear
+            //
+            this.btnClear.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnClear.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnClear.Location = new System.Drawing.Point(461, 35);
+            this.btnClear.Name = "btnClear";
+            this.btnClear.Size = new System.Drawing.Size(75, 32);
+            this.btnClear.TabIndex = 3;
+            this.btnClear.Text = "Clear";
+            this.btnClear.Click += new System.EventHandler(this.BtnClear_Click);
+            //
+            // btnNew
+            //
+            this.btnNew.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(5)))), ((int)(((byte)(150)))), ((int)(((byte)(105)))));
+            this.btnNew.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnNew.FlatAppearance.BorderSize = 0;
+            this.btnNew.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnNew.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
+            this.btnNew.ForeColor = System.Drawing.Color.White;
+            this.btnNew.Location = new System.Drawing.Point(544, 35);
+            this.btnNew.Name = "btnNew";
+            this.btnNew.Size = new System.Drawing.Size(140, 32);
+            this.btnNew.TabIndex = 4;
+            this.btnNew.Text = "+ New Doctor";
+            this.btnNew.UseVisualStyleBackColor = false;
+            this.btnNew.Click += new System.EventHandler(this.BtnNewDoctor_Click);
+            //
+            // lblViewOnly
+            //
+            this.lblViewOnly.AutoSize = true;
+            this.lblViewOnly.Font = new System.Drawing.Font("Segoe UI", 8.5F, System.Drawing.FontStyle.Italic);
+            this.lblViewOnly.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
+            this.lblViewOnly.Location = new System.Drawing.Point(544, 72);
+            this.lblViewOnly.Name = "lblViewOnly";
+            this.lblViewOnly.Size = new System.Drawing.Size(300, 15);
+            this.lblViewOnly.TabIndex = 7;
+            this.lblViewOnly.Text = "View only — doctor records are managed by administrators";
+            this.lblViewOnly.Visible = false;
+            //
+            // chkShowInactive
+            //
+            this.chkShowInactive.AutoSize = true;
+            this.chkShowInactive.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.chkShowInactive.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.chkShowInactive.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
+            this.chkShowInactive.Location = new System.Drawing.Point(700, 41);
+            this.chkShowInactive.Name = "chkShowInactive";
+            this.chkShowInactive.Size = new System.Drawing.Size(98, 19);
+            this.chkShowInactive.TabIndex = 5;
+            this.chkShowInactive.Text = "Show inactive";
+            this.chkShowInactive.CheckedChanged += new System.EventHandler(this.ChkShowInactive_CheckedChanged);
+            //
+            // lblCount
+            //
+            this.lblCount.AutoSize = true;
+            this.lblCount.Font = new System.Drawing.Font("Segoe UI", 8.5F);
+            this.lblCount.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
+            this.lblCount.Location = new System.Drawing.Point(0, 72);
+            this.lblCount.Name = "lblCount";
+            this.lblCount.Size = new System.Drawing.Size(92, 15);
+            this.lblCount.TabIndex = 6;
+            this.lblCount.Text = "Showing doctors";
+            //
+            // grid
+            //
+            this.grid.AllowUserToAddRows = false;
+            this.grid.AllowUserToDeleteRows = false;
+            this.grid.AllowUserToResizeRows = false;
+            this.grid.AutoGenerateColumns = false;
+            this.grid.BackgroundColor = System.Drawing.Color.White;
+            this.grid.Columns.AddRange(new System.Windows.Forms.DataGridViewColumn[] {
+            this.colId,
+            this.colNo,
+            this.colName,
+            this.colSpecialization,
+            this.colDepartment,
+            this.colContact,
+            this.colStatus,
+            this.colEdit,
+            this.colAction});
+            this.grid.Dock = System.Windows.Forms.DockStyle.Fill;
+            this.grid.Location = new System.Drawing.Point(15, 105);
+            this.grid.MultiSelect = false;
+            this.grid.Name = "grid";
+            this.grid.ReadOnly = true;
+            this.grid.RowHeadersVisible = false;
+            this.grid.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
+            this.grid.Size = new System.Drawing.Size(994, 640);
+            this.grid.TabIndex = 1;
+            this.grid.CellClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.Grid_CellClick);
+            this.grid.CellFormatting += new System.Windows.Forms.DataGridViewCellFormattingEventHandler(this.Grid_CellFormatting);
+            //
+            // colId
+            //
+            this.colId.DataPropertyName = "Id";
+            this.colId.HeaderText = "Id";
+            this.colId.Name = "colId";
+            this.colId.ReadOnly = true;
+            this.colId.Visible = false;
+            //
+            // colNo
+            //
+            this.colNo.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colNo.DataPropertyName = "No";
+            this.colNo.HeaderText = "Doctor ID";
+            this.colNo.Name = "colNo";
+            this.colNo.ReadOnly = true;
+            //
+            // colName
+            //
+            this.colName.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.Fill;
+            this.colName.DataPropertyName = "Name";
+            this.colName.HeaderText = "Full Name";
+            this.colName.MinimumWidth = 160;
+            this.colName.Name = "colName";
+            this.colName.ReadOnly = true;
+            //
+            // colSpecialization
+            //
+            this.colSpecialization.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colSpecialization.DataPropertyName = "Specialization";
+            this.colSpecialization.HeaderText = "Specialization";
+            this.colSpecialization.Name = "colSpecialization";
+            this.colSpecialization.ReadOnly = true;
+            this.colSpecialization.Width = 150;
+            //
+            // colDepartment
+            //
+            this.colDepartment.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colDepartment.DataPropertyName = "Department";
+            this.colDepartment.HeaderText = "Department";
+            this.colDepartment.Name = "colDepartment";
+            this.colDepartment.ReadOnly = true;
+            this.colDepartment.Width = 140;
+            //
+            // colContact
+            //
+            this.colContact.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colContact.DataPropertyName = "Contact";
+            this.colContact.HeaderText = "Contact";
+            this.colContact.Name = "colContact";
+            this.colContact.ReadOnly = true;
+            this.colContact.Width = 125;
+            //
+            // colStatus
+            //
+            this.colStatus.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colStatus.DataPropertyName = "Status";
+            this.colStatus.HeaderText = "Status";
+            this.colStatus.Name = "colStatus";
+            this.colStatus.ReadOnly = true;
+            this.colStatus.Width = 85;
+            //
+            // colEdit
+            //
+            this.colEdit.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colEdit.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.colEdit.HeaderText = "Actions";
+            this.colEdit.Name = "colEdit";
+            this.colEdit.ReadOnly = true;
+            this.colEdit.Text = "Edit";
+            this.colEdit.UseColumnTextForButtonValue = true;
+            this.colEdit.Width = 80;
+            //
+            // colAction
+            //
             // Per-row action: text is set in CellFormatting to "Deactivate" for active
             // doctors and "Activate" for inactive ones (UseColumnTextForButtonValue off).
-            grid.Columns.Add(new DataGridViewButtonColumn
-            {
-                Name = "colAction",
-                HeaderText = "",
-                UseColumnTextForButtonValue = false,
-                AutoSizeMode = DataGridViewAutoSizeColumnMode.None,
-                Width = 100,
-                FlatStyle = FlatStyle.Flat
-            });
+            this.colAction.AutoSizeMode = System.Windows.Forms.DataGridViewAutoSizeColumnMode.None;
+            this.colAction.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.colAction.HeaderText = "";
+            this.colAction.Name = "colAction";
+            this.colAction.ReadOnly = true;
+            //
+            // DoctorsView
+            //
+            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
+            this.Controls.Add(this.grid);
+            this.Controls.Add(this.header);
+            this.Name = "DoctorsView";
+            this.Padding = new System.Windows.Forms.Padding(15);
+            this.Size = new System.Drawing.Size(1024, 760);
+            this.header.ResumeLayout(false);
+            this.header.PerformLayout();
+            ((System.ComponentModel.ISupportInitialize)(this.grid)).EndInit();
+            this.ResumeLayout(false);
+
         }
 
         private void Grid_CellFormatting(object sender, DataGridViewCellFormattingEventArgs e)
@@ -286,26 +373,21 @@ namespace HospitalSystem.Views
         }
 
         // ===================== Search box placeholder =====================
-        private void SetupSearchPlaceholder()
+        // The placeholder text and grey colour are set in InitializeComponent.
+        private void TxtSearch_Enter(object sender, EventArgs e)
         {
-            txtSearch.Text = SearchPlaceholder;
-            txtSearch.ForeColor = Color.Gray;
-            searchPlaceholderActive = true;
+            if (searchPlaceholderActive)
+            {
+                txtSearch.Text = "";
+                txtSearch.ForeColor = Color.FromArgb(17, 24, 39);
+                searchPlaceholderActive = false;
+            }
+        }
 
-            txtSearch.Enter += (s, e) =>
-            {
-                if (searchPlaceholderActive)
-                {
-                    txtSearch.Text = "";
-                    txtSearch.ForeColor = Color.FromArgb(17, 24, 39);
-                    searchPlaceholderActive = false;
-                }
-            };
-            txtSearch.Leave += (s, e) =>
-            {
-                if (string.IsNullOrWhiteSpace(txtSearch.Text))
-                    ClearSearchBox();
-            };
+        private void TxtSearch_Leave(object sender, EventArgs e)
+        {
+            if (string.IsNullOrWhiteSpace(txtSearch.Text))
+                ClearSearchBox();
         }
 
         private void ClearSearchBox()

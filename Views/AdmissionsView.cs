@@ -11,26 +11,31 @@ namespace HospitalSystem.Views
     {
         private DataGridView gridAdmissions;
         private DataGridView gridBeds;
-        private ComboBox cmbPatient, cmbDoctor, cmbBed;
+        private ComboBox cmbPatient;
+        private ComboBox cmbDoctor;
+        private ComboBox cmbBed;
         private TextBox txtDiagnosis;
-        private Button btnAdmit, btnDischarge, btnRemoveFromWaitlist;
+        private Button btnAdmit;
+        private Button btnDischarge;
+        private Button btnRemoveFromWaitlist;
+        private Button btnWaitlist;
+        private Button btnAssignBed;
         private Panel formPanel;
         private Label title;
         private Label lblP;
         private Label lblD;
         private Label lblB;
         private Label lblDiag;
+        private Label lblWaitlistHint;
         private Label lblAdm;
         private Label lblBeds;
         private Label lblBedWarning;
-        private Button btnWaitlist, btnAssignBed;
 
         public AdmissionsView()
         {
+            // Every control and event is set up in InitializeComponent() (Designer format),
+            // so the Designer shows the complete screen.
             InitializeComponent();
-            WireEvents();
-            BuildExtraButtons();
-            BuildBedBoardExtras();
 
             // The Designer instantiates this class to render it at design time;
             // data loading must never run then, or it tries to open a DB connection.
@@ -40,76 +45,6 @@ namespace HospitalSystem.Views
                 LoadAdmissions();
                 LoadBeds();
             }
-        }
-
-        // Deliberately kept OUT of InitializeComponent(): the WinForms Designer
-        // only tracks event/property wiring made through its own component model.
-        // Anything wired here in plain code survives a future Designer save intact;
-        // anything left inside InitializeComponent() risks being silently dropped
-        // the next time the form is opened and saved in the Designer.
-        private void WireEvents()
-        {
-            btnAdmit.Click += BtnAdmit_Click;
-            btnDischarge.Click += BtnDischarge_Click;
-        }
-
-        // Built in code (not InitializeComponent) for the same reason as WireEvents().
-        private void BuildExtraButtons()
-        {
-            // Admissions can't be cancelled (admitted patients are discharged); only a patient
-            // still waiting for a bed can be taken off the waiting list.
-            btnRemoveFromWaitlist = new Button();
-            btnRemoveFromWaitlist.Text = "Remove from Waiting List";
-            btnRemoveFromWaitlist.Location = new Point(650, 10);
-            btnRemoveFromWaitlist.Size = new Size(150, 30);
-            btnRemoveFromWaitlist.Click += BtnRemoveFromWaitlist_Click;
-            formPanel.Controls.Add(btnRemoveFromWaitlist);
-
-            // Waiting list: admit without a bed when none is free, assign one later.
-            formPanel.Height = 215;
-
-            btnWaitlist = new Button();
-            btnWaitlist.Text = "Add to Waiting List";
-            btnWaitlist.Location = new Point(530, 165);
-            btnWaitlist.Size = new Size(130, 32);
-            btnWaitlist.BackColor = Color.FromArgb(217, 119, 6);
-            btnWaitlist.ForeColor = Color.White;
-            btnWaitlist.FlatStyle = FlatStyle.Flat;
-            btnWaitlist.Click += BtnWaitlist_Click;
-            formPanel.Controls.Add(btnWaitlist);
-
-            btnAssignBed = new Button();
-            btnAssignBed.Text = "Assign Bed to Selected";
-            btnAssignBed.Location = new Point(670, 165);
-            btnAssignBed.Size = new Size(130, 32);
-            btnAssignBed.Click += BtnAssignBed_Click;
-            formPanel.Controls.Add(btnAssignBed);
-
-            Label hint = new Label();
-            hint.Text = "No free bed? Add the patient to the waiting list, then pick a pending admission below and assign it a bed once one frees up.";
-            hint.Location = new Point(15, 160);
-            hint.Size = new Size(500, 40);
-            hint.ForeColor = Color.FromArgb(107, 114, 128);
-            formPanel.Controls.Add(hint);
-        }
-
-        // Bed-board additions (occupancy warning + colour-coded status), built in code
-        // for the same reason as WireEvents()/BuildExtraButtons().
-        private void BuildBedBoardExtras()
-        {
-            lblBedWarning = new Label();
-            lblBedWarning.AutoSize = true;
-            lblBedWarning.MaximumSize = new Size(500, 0);
-            lblBedWarning.Location = new Point(150, 13);
-            lblBedWarning.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
-            lblBedWarning.ForeColor = Color.FromArgb(185, 28, 28);
-            lblBedWarning.Visible = false;
-            formPanel.Controls.Add(lblBedWarning);
-
-            lblAdm.UseMnemonic = false;   // show "&" literally
-            lblAdm.Text = "Waiting List, Active & Recent Admissions";
-
-            gridBeds.CellFormatting += GridBeds_CellFormatting;
         }
 
         // Green for an available bed, red for an occupied one.
@@ -167,9 +102,16 @@ namespace HospitalSystem.Views
             }
         }
 
+        // Designer-generated layout, top to bottom: the Admit Patient form (with the waiting-list
+        // buttons), the admissions list (waiting list first), then the bed status board filling the rest.
         private void InitializeComponent()
         {
             this.formPanel = new System.Windows.Forms.Panel();
+            this.lblBedWarning = new System.Windows.Forms.Label();
+            this.btnRemoveFromWaitlist = new System.Windows.Forms.Button();
+            this.lblWaitlistHint = new System.Windows.Forms.Label();
+            this.btnAssignBed = new System.Windows.Forms.Button();
+            this.btnWaitlist = new System.Windows.Forms.Button();
             this.title = new System.Windows.Forms.Label();
             this.lblP = new System.Windows.Forms.Label();
             this.cmbPatient = new System.Windows.Forms.ComboBox();
@@ -189,11 +131,16 @@ namespace HospitalSystem.Views
             ((System.ComponentModel.ISupportInitialize)(this.gridAdmissions)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.gridBeds)).BeginInit();
             this.SuspendLayout();
-            // 
+            //
             // formPanel
-            // 
+            //
             this.formPanel.BackColor = System.Drawing.Color.White;
             this.formPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.formPanel.Controls.Add(this.lblBedWarning);
+            this.formPanel.Controls.Add(this.btnRemoveFromWaitlist);
+            this.formPanel.Controls.Add(this.lblWaitlistHint);
+            this.formPanel.Controls.Add(this.btnAssignBed);
+            this.formPanel.Controls.Add(this.btnWaitlist);
             this.formPanel.Controls.Add(this.title);
             this.formPanel.Controls.Add(this.lblP);
             this.formPanel.Controls.Add(this.cmbPatient);
@@ -206,14 +153,14 @@ namespace HospitalSystem.Views
             this.formPanel.Controls.Add(this.btnAdmit);
             this.formPanel.Controls.Add(this.btnDischarge);
             this.formPanel.Dock = System.Windows.Forms.DockStyle.Top;
-            this.formPanel.Location = new System.Drawing.Point(10, 286);
+            this.formPanel.Location = new System.Drawing.Point(10, 10);
             this.formPanel.Name = "formPanel";
             this.formPanel.Padding = new System.Windows.Forms.Padding(15);
-            this.formPanel.Size = new System.Drawing.Size(807, 180);
+            this.formPanel.Size = new System.Drawing.Size(1004, 215);
             this.formPanel.TabIndex = 0;
-            // 
+            //
             // title
-            // 
+            //
             this.title.AutoSize = true;
             this.title.Font = new System.Drawing.Font("Segoe UI", 12F, System.Drawing.FontStyle.Bold);
             this.title.Location = new System.Drawing.Point(15, 10);
@@ -221,76 +168,99 @@ namespace HospitalSystem.Views
             this.title.Size = new System.Drawing.Size(116, 21);
             this.title.TabIndex = 0;
             this.title.Text = "Admit Patient";
-            // 
+            //
+            // lblBedWarning
+            //
+            this.lblBedWarning.AutoSize = true;
+            this.lblBedWarning.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Bold);
+            this.lblBedWarning.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(185)))), ((int)(((byte)(28)))), ((int)(((byte)(28)))));
+            this.lblBedWarning.Location = new System.Drawing.Point(150, 13);
+            this.lblBedWarning.MaximumSize = new System.Drawing.Size(490, 0);
+            this.lblBedWarning.Name = "lblBedWarning";
+            this.lblBedWarning.Size = new System.Drawing.Size(300, 15);
+            this.lblBedWarning.TabIndex = 17;
+            this.lblBedWarning.Text = "⚠ Bed occupancy warning (shown when beds run low)";
+            this.lblBedWarning.Visible = false;
+            //
+            // btnRemoveFromWaitlist
+            //
+            this.btnRemoveFromWaitlist.Location = new System.Drawing.Point(650, 10);
+            this.btnRemoveFromWaitlist.Name = "btnRemoveFromWaitlist";
+            this.btnRemoveFromWaitlist.Size = new System.Drawing.Size(150, 30);
+            this.btnRemoveFromWaitlist.TabIndex = 16;
+            this.btnRemoveFromWaitlist.Text = "Remove from Waiting List";
+            this.btnRemoveFromWaitlist.UseVisualStyleBackColor = true;
+            this.btnRemoveFromWaitlist.Click += new System.EventHandler(this.BtnRemoveFromWaitlist_Click);
+            //
             // lblP
-            // 
+            //
             this.lblP.AutoSize = true;
             this.lblP.Location = new System.Drawing.Point(15, 45);
             this.lblP.Name = "lblP";
             this.lblP.Size = new System.Drawing.Size(40, 13);
             this.lblP.TabIndex = 1;
             this.lblP.Text = "Patient";
-            // 
+            //
             // cmbPatient
-            // 
+            //
             this.cmbPatient.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbPatient.Location = new System.Drawing.Point(15, 65);
             this.cmbPatient.Name = "cmbPatient";
             this.cmbPatient.Size = new System.Drawing.Size(250, 21);
             this.cmbPatient.TabIndex = 2;
-            // 
+            //
             // lblD
-            // 
+            //
             this.lblD.AutoSize = true;
             this.lblD.Location = new System.Drawing.Point(280, 45);
             this.lblD.Name = "lblD";
             this.lblD.Size = new System.Drawing.Size(39, 13);
             this.lblD.TabIndex = 3;
             this.lblD.Text = "Doctor";
-            // 
+            //
             // cmbDoctor
-            // 
+            //
             this.cmbDoctor.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbDoctor.Location = new System.Drawing.Point(280, 65);
             this.cmbDoctor.Name = "cmbDoctor";
             this.cmbDoctor.Size = new System.Drawing.Size(220, 21);
             this.cmbDoctor.TabIndex = 4;
-            // 
+            //
             // lblB
-            // 
+            //
             this.lblB.AutoSize = true;
             this.lblB.Location = new System.Drawing.Point(520, 45);
             this.lblB.Name = "lblB";
             this.lblB.Size = new System.Drawing.Size(138, 13);
             this.lblB.TabIndex = 5;
             this.lblB.Text = "Room / Bed (available only)";
-            // 
+            //
             // cmbBed
-            // 
+            //
             this.cmbBed.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbBed.Location = new System.Drawing.Point(520, 65);
             this.cmbBed.Name = "cmbBed";
             this.cmbBed.Size = new System.Drawing.Size(280, 21);
             this.cmbBed.TabIndex = 6;
-            // 
+            //
             // lblDiag
-            // 
+            //
             this.lblDiag.AutoSize = true;
             this.lblDiag.Location = new System.Drawing.Point(15, 105);
             this.lblDiag.Name = "lblDiag";
             this.lblDiag.Size = new System.Drawing.Size(101, 13);
             this.lblDiag.TabIndex = 7;
             this.lblDiag.Text = "Diagnosis / Reason";
-            // 
+            //
             // txtDiagnosis
-            // 
+            //
             this.txtDiagnosis.Location = new System.Drawing.Point(15, 125);
             this.txtDiagnosis.Name = "txtDiagnosis";
             this.txtDiagnosis.Size = new System.Drawing.Size(500, 20);
             this.txtDiagnosis.TabIndex = 8;
-            // 
+            //
             // btnAdmit
-            // 
+            //
             this.btnAdmit.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(5)))), ((int)(((byte)(150)))), ((int)(((byte)(105)))));
             this.btnAdmit.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnAdmit.ForeColor = System.Drawing.Color.White;
@@ -300,9 +270,10 @@ namespace HospitalSystem.Views
             this.btnAdmit.TabIndex = 9;
             this.btnAdmit.Text = "Admit Patient";
             this.btnAdmit.UseVisualStyleBackColor = false;
-            // 
+            this.btnAdmit.Click += new System.EventHandler(this.BtnAdmit_Click);
+            //
             // btnDischarge
-            // 
+            //
             this.btnDischarge.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(38)))), ((int)(((byte)(38)))));
             this.btnDischarge.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnDischarge.ForeColor = System.Drawing.Color.White;
@@ -312,68 +283,105 @@ namespace HospitalSystem.Views
             this.btnDischarge.TabIndex = 10;
             this.btnDischarge.Text = "Discharge Selected";
             this.btnDischarge.UseVisualStyleBackColor = false;
-            // 
+            this.btnDischarge.Click += new System.EventHandler(this.BtnDischarge_Click);
+            //
+            // lblWaitlistHint
+            //
+            this.lblWaitlistHint.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
+            this.lblWaitlistHint.Location = new System.Drawing.Point(15, 160);
+            this.lblWaitlistHint.Name = "lblWaitlistHint";
+            this.lblWaitlistHint.Size = new System.Drawing.Size(500, 40);
+            this.lblWaitlistHint.TabIndex = 13;
+            this.lblWaitlistHint.Text = "No free bed? Add the patient to the waiting list, then pick a pending admission below and assign it a bed once one frees up.";
+            //
+            // btnWaitlist
+            //
+            this.btnWaitlist.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(217)))), ((int)(((byte)(119)))), ((int)(((byte)(6)))));
+            this.btnWaitlist.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnWaitlist.ForeColor = System.Drawing.Color.White;
+            this.btnWaitlist.Location = new System.Drawing.Point(530, 165);
+            this.btnWaitlist.Name = "btnWaitlist";
+            this.btnWaitlist.Size = new System.Drawing.Size(130, 32);
+            this.btnWaitlist.TabIndex = 11;
+            this.btnWaitlist.Text = "Add to Waiting List";
+            this.btnWaitlist.UseVisualStyleBackColor = false;
+            this.btnWaitlist.Click += new System.EventHandler(this.BtnWaitlist_Click);
+            //
+            // btnAssignBed
+            //
+            this.btnAssignBed.Location = new System.Drawing.Point(670, 165);
+            this.btnAssignBed.Name = "btnAssignBed";
+            this.btnAssignBed.Size = new System.Drawing.Size(130, 32);
+            this.btnAssignBed.TabIndex = 12;
+            this.btnAssignBed.Text = "Assign Bed to Selected";
+            this.btnAssignBed.UseVisualStyleBackColor = true;
+            this.btnAssignBed.Click += new System.EventHandler(this.BtnAssignBed_Click);
+            //
             // lblAdm
-            // 
+            //
             this.lblAdm.Dock = System.Windows.Forms.DockStyle.Top;
             this.lblAdm.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
-            this.lblAdm.Location = new System.Drawing.Point(10, 258);
+            this.lblAdm.Location = new System.Drawing.Point(10, 225);
             this.lblAdm.Name = "lblAdm";
-            this.lblAdm.Size = new System.Drawing.Size(807, 28);
+            this.lblAdm.Size = new System.Drawing.Size(1004, 30);
             this.lblAdm.TabIndex = 1;
-            this.lblAdm.Text = "Active & Recent Admissions";
-            // 
+            this.lblAdm.Text = "Waiting List, Active & Recent Admissions";
+            this.lblAdm.TextAlign = System.Drawing.ContentAlignment.BottomLeft;
+            this.lblAdm.UseMnemonic = false;
+            //
             // gridAdmissions
-            // 
+            //
             this.gridAdmissions.AllowUserToAddRows = false;
             this.gridAdmissions.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
             this.gridAdmissions.BackgroundColor = System.Drawing.Color.White;
             this.gridAdmissions.Dock = System.Windows.Forms.DockStyle.Top;
-            this.gridAdmissions.Location = new System.Drawing.Point(10, 38);
+            this.gridAdmissions.Location = new System.Drawing.Point(10, 255);
             this.gridAdmissions.MultiSelect = false;
             this.gridAdmissions.Name = "gridAdmissions";
             this.gridAdmissions.ReadOnly = true;
             this.gridAdmissions.RowHeadersVisible = false;
             this.gridAdmissions.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.gridAdmissions.Size = new System.Drawing.Size(807, 220);
+            this.gridAdmissions.Size = new System.Drawing.Size(1004, 220);
             this.gridAdmissions.TabIndex = 2;
-            // 
+            //
             // lblBeds
-            // 
+            //
             this.lblBeds.Dock = System.Windows.Forms.DockStyle.Top;
             this.lblBeds.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
-            this.lblBeds.Location = new System.Drawing.Point(10, 10);
+            this.lblBeds.Location = new System.Drawing.Point(10, 475);
             this.lblBeds.Name = "lblBeds";
-            this.lblBeds.Size = new System.Drawing.Size(807, 28);
+            this.lblBeds.Size = new System.Drawing.Size(1004, 30);
             this.lblBeds.TabIndex = 3;
             this.lblBeds.Text = "Bed Status Board";
-            // 
+            this.lblBeds.TextAlign = System.Drawing.ContentAlignment.BottomLeft;
+            //
             // gridBeds
-            // 
+            //
             this.gridBeds.AllowUserToAddRows = false;
             this.gridBeds.AutoSizeColumnsMode = System.Windows.Forms.DataGridViewAutoSizeColumnsMode.Fill;
             this.gridBeds.BackgroundColor = System.Drawing.Color.White;
             this.gridBeds.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.gridBeds.Location = new System.Drawing.Point(10, 10);
+            this.gridBeds.Location = new System.Drawing.Point(10, 505);
             this.gridBeds.Name = "gridBeds";
             this.gridBeds.ReadOnly = true;
             this.gridBeds.RowHeadersVisible = false;
             this.gridBeds.SelectionMode = System.Windows.Forms.DataGridViewSelectionMode.FullRowSelect;
-            this.gridBeds.Size = new System.Drawing.Size(807, 371);
+            this.gridBeds.Size = new System.Drawing.Size(1004, 245);
             this.gridBeds.TabIndex = 4;
-            // 
+            this.gridBeds.CellFormatting += new System.Windows.Forms.DataGridViewCellFormattingEventHandler(this.GridBeds_CellFormatting);
+            //
             // AdmissionsView
-            // 
+            //
+            // Controls are added fill-first, then bottom-to-top: the last one added docks at the very top.
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(243)))), ((int)(((byte)(244)))), ((int)(((byte)(246)))));
-            this.Controls.Add(this.formPanel);
-            this.Controls.Add(this.lblAdm);
-            this.Controls.Add(this.gridAdmissions);
-            this.Controls.Add(this.lblBeds);
             this.Controls.Add(this.gridBeds);
-            this.gridBeds.BringToFront();
+            this.Controls.Add(this.lblBeds);
+            this.Controls.Add(this.gridAdmissions);
+            this.Controls.Add(this.lblAdm);
+            this.Controls.Add(this.formPanel);
             this.Name = "AdmissionsView";
             this.Padding = new System.Windows.Forms.Padding(10);
-            this.Size = new System.Drawing.Size(827, 391);
+            this.Size = new System.Drawing.Size(1024, 760);
             this.formPanel.ResumeLayout(false);
             this.formPanel.PerformLayout();
             ((System.ComponentModel.ISupportInitialize)(this.gridAdmissions)).EndInit();

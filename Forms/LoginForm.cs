@@ -8,116 +8,170 @@ namespace HospitalSystem.Forms
 {
     public class LoginForm : Form
     {
-        private TextBox txtUsername;
-        private TextBox txtPassword;
-        private Button btnLogin;
-        private Label lblTitle;
-        private Label lblError;
         private Panel panelCard;
+        private Label lblTitle;
+        private Label lblSubtitle;
+        private Label lblUser;
+        private TextBox txtUsername;
+        private Label lblPass;
+        private TextBox txtPassword;
+        private Label lblError;
+        private Button btnLogin;
+        private Label lblHint;
 
         public LoginForm()
         {
             InitializeComponent();
         }
 
+        // Designer-generated layout: a white card centred on a grey background with the
+        // title, username/password fields, an error line, the Sign In button and a demo hint.
         private void InitializeComponent()
         {
-            this.Text = "Hospital System - Login";
-            this.Size = new Size(420, 480);
-            this.StartPosition = FormStartPosition.CenterScreen;
-            this.FormBorderStyle = FormBorderStyle.FixedDialog;
+            this.panelCard = new System.Windows.Forms.Panel();
+            this.lblTitle = new System.Windows.Forms.Label();
+            this.lblSubtitle = new System.Windows.Forms.Label();
+            this.lblUser = new System.Windows.Forms.Label();
+            this.txtUsername = new System.Windows.Forms.TextBox();
+            this.lblPass = new System.Windows.Forms.Label();
+            this.txtPassword = new System.Windows.Forms.TextBox();
+            this.lblError = new System.Windows.Forms.Label();
+            this.btnLogin = new System.Windows.Forms.Button();
+            this.lblHint = new System.Windows.Forms.Label();
+            this.panelCard.SuspendLayout();
+            this.SuspendLayout();
+            //
+            // panelCard
+            //
+            this.panelCard.BackColor = System.Drawing.Color.White;
+            this.panelCard.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            this.panelCard.Controls.Add(this.lblTitle);
+            this.panelCard.Controls.Add(this.lblSubtitle);
+            this.panelCard.Controls.Add(this.lblUser);
+            this.panelCard.Controls.Add(this.txtUsername);
+            this.panelCard.Controls.Add(this.lblPass);
+            this.panelCard.Controls.Add(this.txtPassword);
+            this.panelCard.Controls.Add(this.lblError);
+            this.panelCard.Controls.Add(this.btnLogin);
+            this.panelCard.Controls.Add(this.lblHint);
+            this.panelCard.Location = new System.Drawing.Point(40, 40);
+            this.panelCard.Name = "panelCard";
+            this.panelCard.Size = new System.Drawing.Size(340, 360);
+            this.panelCard.TabIndex = 0;
+            //
+            // lblTitle
+            //
+            this.lblTitle.AutoSize = true;
+            this.lblTitle.Font = new System.Drawing.Font("Segoe UI", 18F, System.Drawing.FontStyle.Bold);
+            this.lblTitle.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(64)))), ((int)(((byte)(175)))));
+            this.lblTitle.Location = new System.Drawing.Point(70, 30);
+            this.lblTitle.Name = "lblTitle";
+            this.lblTitle.Size = new System.Drawing.Size(191, 32);
+            this.lblTitle.TabIndex = 0;
+            this.lblTitle.Text = "Hospital System";
+            //
+            // lblSubtitle
+            //
+            this.lblSubtitle.AutoSize = true;
+            this.lblSubtitle.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblSubtitle.ForeColor = System.Drawing.Color.Gray;
+            this.lblSubtitle.Location = new System.Drawing.Point(100, 65);
+            this.lblSubtitle.Name = "lblSubtitle";
+            this.lblSubtitle.Size = new System.Drawing.Size(110, 15);
+            this.lblSubtitle.TabIndex = 1;
+            this.lblSubtitle.Text = "Sign in to continue";
+            //
+            // lblUser
+            //
+            this.lblUser.AutoSize = true;
+            this.lblUser.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblUser.Location = new System.Drawing.Point(30, 110);
+            this.lblUser.Name = "lblUser";
+            this.lblUser.Size = new System.Drawing.Size(60, 15);
+            this.lblUser.TabIndex = 2;
+            this.lblUser.Text = "Username";
+            //
+            // txtUsername
+            //
+            this.txtUsername.Font = new System.Drawing.Font("Segoe UI", 11F);
+            this.txtUsername.Location = new System.Drawing.Point(30, 130);
+            this.txtUsername.Name = "txtUsername";
+            this.txtUsername.Size = new System.Drawing.Size(270, 27);
+            this.txtUsername.TabIndex = 3;
+            //
+            // lblPass
+            //
+            this.lblPass.AutoSize = true;
+            this.lblPass.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblPass.Location = new System.Drawing.Point(30, 175);
+            this.lblPass.Name = "lblPass";
+            this.lblPass.Size = new System.Drawing.Size(57, 15);
+            this.lblPass.TabIndex = 4;
+            this.lblPass.Text = "Password";
+            //
+            // txtPassword
+            //
+            this.txtPassword.Font = new System.Drawing.Font("Segoe UI", 11F);
+            this.txtPassword.Location = new System.Drawing.Point(30, 195);
+            this.txtPassword.Name = "txtPassword";
+            this.txtPassword.Size = new System.Drawing.Size(270, 27);
+            this.txtPassword.TabIndex = 5;
+            this.txtPassword.UseSystemPasswordChar = true;
+            //
+            // lblError
+            //
+            this.lblError.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.lblError.ForeColor = System.Drawing.Color.Firebrick;
+            this.lblError.Location = new System.Drawing.Point(30, 235);
+            this.lblError.Name = "lblError";
+            this.lblError.Size = new System.Drawing.Size(270, 20);
+            this.lblError.TabIndex = 6;
+            //
+            // btnLogin
+            //
+            this.btnLogin.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnLogin.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnLogin.FlatAppearance.BorderSize = 0;
+            this.btnLogin.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnLogin.Font = new System.Drawing.Font("Segoe UI", 11F, System.Drawing.FontStyle.Bold);
+            this.btnLogin.ForeColor = System.Drawing.Color.White;
+            this.btnLogin.Location = new System.Drawing.Point(30, 270);
+            this.btnLogin.Name = "btnLogin";
+            this.btnLogin.Size = new System.Drawing.Size(270, 40);
+            this.btnLogin.TabIndex = 7;
+            this.btnLogin.Text = "Sign In";
+            this.btnLogin.UseVisualStyleBackColor = false;
+            this.btnLogin.Click += new System.EventHandler(this.BtnLogin_Click);
+            //
+            // lblHint
+            //
+            this.lblHint.AutoSize = true;
+            this.lblHint.Font = new System.Drawing.Font("Segoe UI", 8F);
+            this.lblHint.ForeColor = System.Drawing.Color.Gray;
+            this.lblHint.Location = new System.Drawing.Point(50, 325);
+            this.lblHint.Name = "lblHint";
+            this.lblHint.Size = new System.Drawing.Size(212, 13);
+            this.lblHint.TabIndex = 8;
+            this.lblHint.Text = "Demo: admin / admin   or   nurse / nurse";
+            //
+            // LoginForm
+            //
+            this.AcceptButton = this.btnLogin;   // Enter key signs in
+            this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(240)))), ((int)(((byte)(242)))), ((int)(((byte)(245)))));
+            this.ClientSize = new System.Drawing.Size(404, 441);
+            this.Controls.Add(this.panelCard);
+            this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             this.MaximizeBox = false;
             this.MinimizeBox = false;
-            this.BackColor = Color.FromArgb(240, 242, 245);
+            this.Name = "LoginForm";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.Text = "Hospital System - Login";
+            this.panelCard.ResumeLayout(false);
+            this.panelCard.PerformLayout();
+            this.ResumeLayout(false);
 
-            // Card panel
-            panelCard = new Panel();
-            panelCard.Size = new Size(340, 360);
-            panelCard.Location = new Point(40, 40);
-            panelCard.BackColor = Color.White;
-            panelCard.BorderStyle = BorderStyle.FixedSingle;
-            this.Controls.Add(panelCard);
-
-            // Title
-            lblTitle = new Label();
-            lblTitle.Text = "Hospital System";
-            lblTitle.Font = new Font("Segoe UI", 18F, FontStyle.Bold);
-            lblTitle.ForeColor = Color.FromArgb(30, 64, 175);
-            lblTitle.AutoSize = true;
-            lblTitle.Location = new Point(70, 30);
-            panelCard.Controls.Add(lblTitle);
-
-            Label lblSubtitle = new Label();
-            lblSubtitle.Text = "Sign in to continue";
-            lblSubtitle.Font = new Font("Segoe UI", 9F);
-            lblSubtitle.ForeColor = Color.Gray;
-            lblSubtitle.AutoSize = true;
-            lblSubtitle.Location = new Point(100, 65);
-            panelCard.Controls.Add(lblSubtitle);
-
-            // Username
-            Label lblUser = new Label();
-            lblUser.Text = "Username";
-            lblUser.Font = new Font("Segoe UI", 9F);
-            lblUser.Location = new Point(30, 110);
-            lblUser.AutoSize = true;
-            panelCard.Controls.Add(lblUser);
-
-            txtUsername = new TextBox();
-            txtUsername.Location = new Point(30, 130);
-            txtUsername.Size = new Size(270, 28);
-            txtUsername.Font = new Font("Segoe UI", 11F);
-            panelCard.Controls.Add(txtUsername);
-
-            // Password
-            Label lblPass = new Label();
-            lblPass.Text = "Password";
-            lblPass.Font = new Font("Segoe UI", 9F);
-            lblPass.Location = new Point(30, 175);
-            lblPass.AutoSize = true;
-            panelCard.Controls.Add(lblPass);
-
-            txtPassword = new TextBox();
-            txtPassword.Location = new Point(30, 195);
-            txtPassword.Size = new Size(270, 28);
-            txtPassword.Font = new Font("Segoe UI", 11F);
-            txtPassword.UseSystemPasswordChar = true;
-            panelCard.Controls.Add(txtPassword);
-
-            // Error label
-            lblError = new Label();
-            lblError.Text = "";
-            lblError.ForeColor = Color.Firebrick;
-            lblError.Font = new Font("Segoe UI", 9F);
-            lblError.Location = new Point(30, 235);
-            lblError.Size = new Size(270, 20);
-            panelCard.Controls.Add(lblError);
-
-            // Login button
-            btnLogin = new Button();
-            btnLogin.Text = "Sign In";
-            btnLogin.Location = new Point(30, 270);
-            btnLogin.Size = new Size(270, 40);
-            btnLogin.Font = new Font("Segoe UI", 11F, FontStyle.Bold);
-            btnLogin.BackColor = Color.FromArgb(37, 99, 235);
-            btnLogin.ForeColor = Color.White;
-            btnLogin.FlatStyle = FlatStyle.Flat;
-            btnLogin.FlatAppearance.BorderSize = 0;
-            btnLogin.Cursor = Cursors.Hand;
-            btnLogin.Click += BtnLogin_Click;
-            panelCard.Controls.Add(btnLogin);
-
-            // Demo hint
-            Label lblHint = new Label();
-            lblHint.Text = "Demo: admin / admin   or   nurse / nurse";
-            lblHint.Font = new Font("Segoe UI", 8F);
-            lblHint.ForeColor = Color.Gray;
-            lblHint.AutoSize = true;
-            lblHint.Location = new Point(50, 325);
-            panelCard.Controls.Add(lblHint);
-
-            // Enter key support
-            this.AcceptButton = btnLogin;
         }
 
         private void BtnLogin_Click(object sender, EventArgs e)
