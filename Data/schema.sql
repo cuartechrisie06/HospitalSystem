@@ -67,33 +67,41 @@ CREATE TABLE IF NOT EXISTS admissions (
     id             INT PRIMARY KEY AUTO_INCREMENT,
     patient_id     INT NOT NULL,
     doctor_id      INT NOT NULL,
-    bed_id         INT NOT NULL,
-    admitted_on    DATETIME NOT NULL,
+    bed_id         INT NULL,                -- NULL while on the waiting list (status Pending)
+    admitted_on    DATETIME NOT NULL,       -- when the bed was assigned; the stay counts from here
+    requested_on   DATETIME NULL,           -- when the admission was requested
     discharged_on  DATETIME NULL,
     diagnosis      VARCHAR(255),
     notes          VARCHAR(500),
-    status         VARCHAR(20) NOT NULL DEFAULT 'Active',
+    status         VARCHAR(20) NOT NULL DEFAULT 'Active',   -- Pending / Active / Discharged / Cancelled
     FOREIGN KEY (patient_id) REFERENCES patients(id),
     FOREIGN KEY (doctor_id) REFERENCES doctors(id),
     FOREIGN KEY (bed_id) REFERENCES beds(id)
 );
 
+-- Raised and resolved automatically by the app (AlertMonitor) from conditions in the other modules.
 CREATE TABLE IF NOT EXISTS alerts (
-    id          INT PRIMARY KEY AUTO_INCREMENT,
-    title       VARCHAR(150),
-    message     VARCHAR(500),
-    severity    VARCHAR(20),
-    status      VARCHAR(20) NOT NULL DEFAULT 'Active',
-    created_on  DATETIME NOT NULL
+    id              INT PRIMARY KEY AUTO_INCREMENT,
+    title           VARCHAR(150),
+    message         VARCHAR(500),
+    severity        VARCHAR(20),
+    status          VARCHAR(20) NOT NULL DEFAULT 'Active',   -- Active / Acknowledged / Resolved
+    created_on      DATETIME NOT NULL,
+    source_key      VARCHAR(100) NULL,     -- triggering condition, e.g. 'STAFF:3'
+    module          VARCHAR(50) NULL,      -- module that raised it
+    acknowledged_by VARCHAR(100) NULL,
+    resolved_on     DATETIME NULL
 );
 
+-- Audit trail of every action; visible to administrators only.
 CREATE TABLE IF NOT EXISTS activity_log (
     id          INT PRIMARY KEY AUTO_INCREMENT,
     module      VARCHAR(50) NOT NULL,
     action      VARCHAR(50) NOT NULL,
     description VARCHAR(255) NOT NULL,
     icon        VARCHAR(10) NOT NULL DEFAULT '',
-    created_at  DATETIME NOT NULL
+    created_at  DATETIME NOT NULL,
+    username    VARCHAR(50) NULL           -- who did it; 'System' for automatic actions
 );
 
 -- Billing. The app also creates these on startup (HospitalData.EnsureBillingTables),
@@ -227,8 +235,5 @@ INSERT INTO charge_schedules (id, description, category, unit_price, ward, per_d
     (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1)
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
-INSERT INTO alerts (id, title, message, severity, created_on) VALUES
-    (1, 'ICU Bed Critical',        'Only 1 ICU bed remaining',                       'High',   DATE_SUB(NOW(), INTERVAL 2 HOUR)),
-    (2, 'Staff Shortage',          'Pediatrics has no doctor on duty',               'Medium', DATE_SUB(NOW(), INTERVAL 5 HOUR)),
-    (3, 'Equipment Maintenance',   'X-Ray machine scheduled for maintenance tomorrow', 'Low',  DATE_SUB(NOW(), INTERVAL 1 DAY))
-ON DUPLICATE KEY UPDATE title = VALUES(title);
+-- No seeded alerts: the app raises them itself from the data above (e.g. Pediatrics and
+-- Cardiology start with no doctor on duty, so a staff shortage alert appears on first run).

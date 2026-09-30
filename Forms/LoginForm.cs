@@ -131,7 +131,7 @@ namespace HospitalSystem.Forms
                 return;
             }
 
-            User user = HospitalData.Authenticate(username, password);
+            User user = HospitalData.SignIn(username, password);   // logs the attempt
             if (user == null)
             {
                 lblError.Text = "Invalid username or password.";
@@ -140,7 +140,6 @@ namespace HospitalSystem.Forms
                 return;
             }
 
-            HospitalData.CurrentUser = user;
             this.DialogResult = DialogResult.OK;
             this.Close();
         }

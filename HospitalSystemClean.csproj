@@ -118,6 +118,7 @@
     <Compile Include="Data\Db.cs" />
     <Compile Include="Data\DesignTimeHelper.cs" />
     <Compile Include="Data\HospitalData.cs" />
+    <Compile Include="Data\AlertMonitor.cs" />
     <Compile Include="Forms\LoginForm.cs">
       <SubType>Form</SubType>
     </Compile>
@@ -137,6 +138,9 @@
       <SubType>UserControl</SubType>
     </Compile>
     <Compile Include="Views\BillStatementPrinter.cs" />
+    <Compile Include="Views\ActivityLogView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Views\ChargeScheduleForm.cs">
       <SubType>Form</SubType>
     </Compile>

@@ -5,11 +5,16 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 ## Features
 
 - **Login** with accounts stored in the database
-- **Dashboard** with live statistics pulled from MySQL
+- **Dashboard** – appointments (today and next 7 days), bed occupancy (overall and per ward), pending admissions (the waiting list, with how long each patient has waited), admitted patients, doctors on duty, and alerts.
+- **Alerts** – raised and cleared automatically by the other modules; there is no manual "new alert". Staff can *acknowledge* an alert, which hides it until the condition clears (it comes back if the situation gets worse). Current rules:
+  - Admissions: high bed occupancy (80%+) / no beds left; ICU down to 1 or 0 beds; patients waiting for a bed (high priority after 4 hours, or as soon as a bed is free)
+  - Doctors: a department with no doctor on duty
+  - Appointments: an off-duty or deactivated doctor with patients still booked today; past appointments not marked completed or cancelled
+  - Billing: discharged patients with an unpaid balance; HMO coverage uncollected after 30 days
 - **Patients** – Register, search, update
 - **Doctors** – Doctor records (license number, credentials, specialization, contact) and duty status, with search; deactivate a doctor with a required reason (kept on the record) and reactivate later. "Show inactive" reveals deactivated doctors; inactive doctors are hidden from appointment/admission scheduling.
 - **Appointments** – Schedule from a searchable, click-to-select table of active patients (captures patient, department, doctor, reason, date & time), confirm, reschedule, mark completed, cancel (with basic double-booking protection). Deactivated patients and doctors cannot be scheduled — they are excluded from the pickers and re-checked at schedule time.
-- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge, cancel (for mistaken entries). Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (admitting is blocked when the hospital is full). Admission status changes feed billing: admitting opens a linked bill from the pre-set admission charge schedule (admit → billing trigger), discharging finalizes all per-day charges to the actual length of stay, and cancelling a mistaken admission voids its unpaid bill.
+- **Admissions** – Admit an active, not-currently-admitted patient (doctor and diagnosis required), assign an available bed, discharge, cancel (for mistaken entries). Live bed board shows every room/bed and ward type with a per-ward availability summary (e.g. `ICU 0/2`), colour-coded occupancy, and a warning when occupancy is high or no bed is free (when the hospital is full, patients go on a **waiting list** as Pending admissions and are given a bed with **Assign Bed to Selected** once one frees up; their bill opens at that point). Admission status changes feed billing: admitting opens a linked bill from the pre-set admission charge schedule (admit → billing trigger), discharging finalizes all per-day charges to the actual length of stay, and cancelling a mistaken admission voids its unpaid bill.
 - **Billing** – Bills per patient (optionally linked to an admission or appointment; an admission's bill is created automatically on admit), line items by category, partial/full payments, auto-calculated balance and status (Unpaid / PartiallyPaid / Paid / Cancelled)
   - **Payments** – Cash (amount tendered and change), Card (card type, last 4 digits only, approval code), HMO (provider, LOA no.), plus e-wallet and bank transfer. Patient payments reduce the patient balance; HMO payments settle the HMO's approved coverage. A bill is Paid once both are settled.
   - **Balances** – each bill shows the patient balance, HMO outstanding and total outstanding, plus what the patient owes across all their bills. The bills list shows totals outstanding from patients and from HMOs, and a **Show: Outstanding** filter.
@@ -20,7 +25,7 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
     - HMO coverage (provider, LOA / approval no., approved amount), deducted from what the patient pays
     - **Print Statement...** produces a statement of account with the full breakdown and payments.
   - **Admission charge schedule** – the pre-set services billed on admission (admission fee, room rate per ward, nursing care, ICU monitoring, lab panel…), each one-time or per day and for all wards or one ward. Managed from **Billing → Admission Charge Schedule...**; price changes apply to bills generated afterwards.
-- **Activity log** – Every action is recorded in the `activity_log` table
+- **Activity Log** (administrators only) – every action in every module is recorded with the user who did it (sign-ins and failed sign-ins, patients, doctors, appointments, admissions, billing, printed statements, alerts raised/cleared by "System"). Filter by date, module, user or text and export to CSV.
 
 ## Demo Accounts
 

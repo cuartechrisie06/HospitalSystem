@@ -17,11 +17,11 @@ namespace HospitalSystem.Data
         public static List<Bed> Beds { get; private set; } = new List<Bed>();
         public static List<Bill> Bills { get; private set; } = new List<Bill>();
         public static List<ChargeSchedule> ChargeSchedules { get; private set; } = new List<ChargeSchedule>();
-        public static List<Alert> Alerts { get; private set; } = new List<Alert>();
-        public static List<ActivityItem> Activities { get; private set; } = new List<ActivityItem>();
-        public static HashSet<int> DismissedAutoAlertIds { get; } = new HashSet<int>();
+        public static List<Alert> Alerts { get; private set; } = new List<Alert>();   // Active + Acknowledged
 
         public static User CurrentUser { get; set; }
+
+        public static bool IsAdmin => CurrentUser != null && CurrentUser.IsAdmin;
 
         static HospitalData()
         {
@@ -40,13 +40,55 @@ namespace HospitalSystem.Data
                 Beds = LoadBeds(conn);
                 Patients = LoadPatients(conn);
                 Appointments = LoadAppointments(conn);
+                EnsureWorkflowColumns(conn);
                 Admissions = LoadAdmissions(conn);
                 EnsureBillingTables(conn);
                 Bills = LoadBills(conn);
                 ChargeSchedules = LoadChargeSchedules(conn);
                 Alerts = LoadAlerts(conn);
-                Activities = LoadActivities(conn);
             }
+
+            // Conditions may have changed while the app was closed (e.g. appointments now overdue).
+            AlertMonitor.Evaluate();
+        }
+
+        // Keep in sync with Data/schema.sql: upgrades an older database in place for the
+        // waiting list (admissions without a bed), alert triggers and the activity log's user.
+        private static void EnsureWorkflowColumns(MySqlConnection conn)
+        {
+            AddColumnIfMissing(conn, "admissions", "requested_on", "requested_on DATETIME NULL");
+            using (var cmd = new MySqlCommand(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = 'admissions' AND column_name = 'bed_id'", conn))
+            {
+                if ((cmd.ExecuteScalar() as string) == "NO")
+                {
+                    using (var alter = new MySqlCommand("ALTER TABLE admissions MODIFY bed_id INT NULL", conn))
+                        alter.ExecuteNonQuery();
+                }
+            }
+
+            AddColumnIfMissing(conn, "alerts", "source_key", "source_key VARCHAR(100) NULL");
+            AddColumnIfMissing(conn, "alerts", "module", "module VARCHAR(50) NULL");
+            AddColumnIfMissing(conn, "alerts", "acknowledged_by", "acknowledged_by VARCHAR(100) NULL");
+            AddColumnIfMissing(conn, "alerts", "resolved_on", "resolved_on DATETIME NULL");
+
+            // Alerts are no longer posted by hand. Close any still open from before (they have no
+            // trigger, so nothing would ever clear them); the rows stay in the table as history.
+            int retired;
+            using (var cmd = new MySqlCommand(
+                "UPDATE alerts SET status='Resolved', resolved_on=NOW(), acknowledged_by=@by " +
+                "WHERE source_key IS NULL AND status IN ('Active', 'Acknowledged')", conn))
+            {
+                cmd.Parameters.AddWithValue("@by", SystemUser);
+                retired = cmd.ExecuteNonQuery();
+            }
+
+            AddColumnIfMissing(conn, "activity_log", "username", "username VARCHAR(50) NULL");
+
+            if (retired > 0)
+                LogActivity(AlertMonitor.ModuleName, "Retired",
+                    $"Closed {retired} manually posted alert(s): alerts are now raised and cleared automatically", "🧹", SystemUser);
         }
 
         private static List<User> LoadUsers(MySqlConnection conn)
@@ -216,18 +258,21 @@ namespace HospitalSystem.Data
         private static List<Admission> LoadAdmissions(MySqlConnection conn)
         {
             var list = new List<Admission>();
-            using (var cmd = new MySqlCommand("SELECT id, patient_id, doctor_id, bed_id, admitted_on, discharged_on, diagnosis, notes, status FROM admissions", conn))
+            using (var cmd = new MySqlCommand("SELECT id, patient_id, doctor_id, bed_id, admitted_on, requested_on, discharged_on, diagnosis, notes, status FROM admissions", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
                 {
+                    var admittedOn = r.GetDateTime("admitted_on");
                     list.Add(new Admission
                     {
                         Id = r.GetInt32("id"),
                         PatientId = r.GetInt32("patient_id"),
                         DoctorId = r.GetInt32("doctor_id"),
-                        BedId = r.GetInt32("bed_id"),
-                        AdmittedOn = r.GetDateTime("admitted_on"),
+                        BedId = r.IsDBNull(r.GetOrdinal("bed_id")) ? 0 : r.GetInt32("bed_id"),
+                        AdmittedOn = admittedOn,
+                        // Admissions from before the waiting list were requested and admitted at once.
+                        RequestedOn = r.IsDBNull(r.GetOrdinal("requested_on")) ? admittedOn : r.GetDateTime("requested_on"),
                         DischargedOn = r.IsDBNull(r.GetOrdinal("discharged_on")) ? (DateTime?)null : r.GetDateTime("discharged_on"),
                         Diagnosis = r.IsDBNull(r.GetOrdinal("diagnosis")) ? null : r.GetString("diagnosis"),
                         Notes = r.IsDBNull(r.GetOrdinal("notes")) ? null : r.GetString("notes"),
@@ -531,173 +576,34 @@ namespace HospitalSystem.Data
             return list;
         }
 
+        // Open alerts only (Active or Acknowledged); resolved ones stay in the table as history.
         private static List<Alert> LoadAlerts(MySqlConnection conn)
         {
             var list = new List<Alert>();
-            try
+            using (var cmd = new MySqlCommand(
+                "SELECT id, title, message, severity, status, created_on, source_key, module, acknowledged_by " +
+                "FROM alerts WHERE status IN ('Active', 'Acknowledged')", conn))
+            using (var r = cmd.ExecuteReader())
             {
-                using (var cmd = new MySqlCommand("SELECT id, title, message, severity, status, created_on FROM alerts WHERE status = 'Active'", conn))
-                using (var r = cmd.ExecuteReader())
+                while (r.Read())
                 {
-                    while (r.Read())
+                    string sourceKey = ReadString(r, "source_key");
+                    list.Add(new Alert
                     {
-                        list.Add(new Alert
-                        {
-                            Id = r.GetInt32("id"),
-                            Title = r.GetString("title"),
-                            Message = r.GetString("message"),
-                            Severity = r.GetString("severity"),
-                            Status = r.IsDBNull(r.GetOrdinal("status")) ? "Active" : r.GetString("status"),
-                            CreatedOn = r.GetDateTime("created_on"),
-                            IsAuto = false
-                        });
-                    }
-                }
-            }
-            catch
-            {
-                // Fallback for schema versions without status column
-                using (var cmd = new MySqlCommand("SELECT id, title, message, severity, created_on FROM alerts", conn))
-                using (var r = cmd.ExecuteReader())
-                {
-                    while (r.Read())
-                    {
-                        list.Add(new Alert
-                        {
-                            Id = r.GetInt32("id"),
-                            Title = r.GetString("title"),
-                            Message = r.GetString("message"),
-                            Severity = r.GetString("severity"),
-                            Status = "Active",
-                            CreatedOn = r.GetDateTime("created_on"),
-                            IsAuto = false
-                        });
-                    }
-                }
-            }
-            return list;
-        }
-
-        private static List<ActivityItem> LoadActivities(MySqlConnection conn)
-        {
-            var list = new List<ActivityItem>();
-            try
-            {
-                using (var cmd = new MySqlCommand("SELECT id, module, action, description, icon, created_at FROM activity_log ORDER BY created_at DESC LIMIT 50", conn))
-                using (var r = cmd.ExecuteReader())
-                {
-                    while (r.Read())
-                    {
-                        list.Add(new ActivityItem
-                        {
-                            Id = r.GetInt32("id"),
-                            Module = r.GetString("module"),
-                            Action = r.GetString("action"),
-                            Description = r.GetString("description"),
-                            Icon = r.IsDBNull(r.GetOrdinal("icon")) ? "" : r.GetString("icon"),
-                            Timestamp = r.GetDateTime("created_at")
-                        });
-                    }
-                }
-            }
-            catch
-            {
-                // activity_log table might not exist yet
-            }
-
-            if (list.Count == 0)
-            {
-                SeedInitialActivities(conn, list);
-            }
-
-            return list;
-        }
-
-        private static void SeedInitialActivities(MySqlConnection conn, List<ActivityItem> list)
-        {
-            var initial = new List<ActivityItem>();
-
-            foreach (var p in Patients)
-            {
-                initial.Add(new ActivityItem
-                {
-                    Module = "Patients",
-                    Action = "Registered",
-                    Description = $"New patient registered: {p.FullName} ({p.PatientNo})",
-                    Icon = "👤",
-                    Timestamp = p.RegisteredOn
-                });
-            }
-
-            foreach (var d in Doctors.Where(doc => doc.IsActive))
-            {
-                initial.Add(new ActivityItem
-                {
-                    Module = "Doctors",
-                    Action = "Duty",
-                    Description = d.IsOnDuty
-                        ? $"Dr. {d.FullName} clocked On Duty ({DepartmentName(d.DepartmentId)})"
-                        : $"Dr. {d.FullName} added to staff ({DepartmentName(d.DepartmentId)})",
-                    Icon = "🩺",
-                    Timestamp = DateTime.Now.AddHours(-2)
-                });
-            }
-
-            foreach (var a in Appointments)
-            {
-                initial.Add(new ActivityItem
-                {
-                    Module = "Appointments",
-                    Action = "Scheduled",
-                    Description = $"Appointment scheduled: {PatientName(a.PatientId)} with {DoctorName(a.DoctorId)}",
-                    Icon = "📅",
-                    Timestamp = a.ScheduledOn.AddDays(-1)
-                });
-            }
-
-            foreach (var adm in Admissions)
-            {
-                initial.Add(new ActivityItem
-                {
-                    Module = "Admissions",
-                    Action = "Admitted",
-                    Description = $"Admitted: {PatientName(adm.PatientId)} to {BedLabel(adm.BedId)}",
-                    Icon = "🏥",
-                    Timestamp = adm.AdmittedOn
-                });
-                if (adm.DischargedOn.HasValue)
-                {
-                    initial.Add(new ActivityItem
-                    {
-                        Module = "Admissions",
-                        Action = "Discharged",
-                        Description = $"Discharged: {PatientName(adm.PatientId)} from {BedLabel(adm.BedId)}",
-                        Icon = "🚪",
-                        Timestamp = adm.DischargedOn.Value
+                        Id = r.GetInt32("id"),
+                        Title = ReadString(r, "title") ?? "",
+                        Message = ReadString(r, "message") ?? "",
+                        Severity = ReadString(r, "severity") ?? "Low",
+                        Status = r.GetString("status"),
+                        CreatedOn = r.GetDateTime("created_on"),
+                        SourceKey = sourceKey,
+                        Module = ReadString(r, "module"),
+                        AcknowledgedBy = ReadString(r, "acknowledged_by"),
+                        IsAuto = sourceKey != null
                     });
                 }
             }
-
-            var sorted = initial.OrderByDescending(x => x.Timestamp).Take(25).ToList();
-            foreach (var item in sorted)
-            {
-                try
-                {
-                    using (var cmd = new MySqlCommand(
-                        "INSERT INTO activity_log (module, action, description, icon, created_at) " +
-                        "VALUES (@module, @action, @description, @icon, @createdAt); SELECT LAST_INSERT_ID();", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@module", item.Module);
-                        cmd.Parameters.AddWithValue("@action", item.Action);
-                        cmd.Parameters.AddWithValue("@description", item.Description);
-                        cmd.Parameters.AddWithValue("@icon", item.Icon ?? "");
-                        cmd.Parameters.AddWithValue("@createdAt", item.Timestamp);
-                        item.Id = Convert.ToInt32(cmd.ExecuteScalar());
-                    }
-                }
-                catch { }
-                list.Add(item);
-            }
+            return list;
         }
 
         // -------------------- Authentication --------------------
@@ -706,6 +612,28 @@ namespace HospitalSystem.Data
             return Users.FirstOrDefault(u =>
                 u.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
                 u.Password == password);
+        }
+
+        // Signs in and records the attempt, successful or not, in the activity log.
+        public static User SignIn(string username, string password)
+        {
+            var user = Authenticate(username, password);
+            if (user == null)
+            {
+                LogActivity("Security", "Sign-in Failed", $"Failed sign-in attempt for username \"{username}\"", "🔒", username);
+                return null;
+            }
+
+            CurrentUser = user;
+            LogActivity("Security", "Signed In", $"{user.DisplayName} ({user.Role}) signed in", "🔑");
+            return user;
+        }
+
+        public static void SignOut()
+        {
+            if (CurrentUser != null)
+                LogActivity("Security", "Signed Out", $"{CurrentUser.DisplayName} signed out", "🚪");
+            CurrentUser = null;
         }
 
         // -------------------- Patients --------------------
@@ -812,8 +740,9 @@ namespace HospitalSystem.Data
         public static int AdmissionCountForPatient(int patientId) =>
             Admissions.Count(a => a.PatientId == patientId);
 
+        // Admitted or on the waiting list: either way the patient can't be admitted again or deactivated.
         public static bool HasActiveAdmission(int patientId) =>
-            Admissions.Any(a => a.PatientId == patientId && a.Status == "Active");
+            Admissions.Any(a => a.PatientId == patientId && (a.IsActive || a.IsPending));
 
         // -------------------- Appointments --------------------
         public static Appointment AddAppointment(Appointment a)
@@ -903,43 +832,98 @@ namespace HospitalSystem.Data
         }
 
         // -------------------- Admissions --------------------
+        // With a bed (BedId > 0) the patient is admitted now. Without one (BedId == 0) the
+        // admission goes on the waiting list as Pending until AssignBed is called.
         public static Admission AddAdmission(Admission a)
         {
-            a.AdmittedOn = DateTime.Now;
-            a.Status = "Active";
+            bool waitlisted = a.BedId <= 0;
+            if (!waitlisted && !AvailableBeds().Any(b => b.Id == a.BedId))
+                throw new InvalidOperationException("That bed is no longer available.");
+
+            a.RequestedOn = DateTime.Now;
+            a.AdmittedOn = a.RequestedOn;   // replaced when a bed is assigned to a waitlisted patient
+            a.Status = waitlisted ? "Pending" : "Active";
 
             using (var conn = Db.OpenConnection())
             {
                 using (var cmd = new MySqlCommand(
-                    "INSERT INTO admissions (patient_id, doctor_id, bed_id, admitted_on, discharged_on, diagnosis, notes, status) " +
-                    "VALUES (@patientId, @doctorId, @bedId, @admittedOn, NULL, @diagnosis, @notes, @status); " +
+                    "INSERT INTO admissions (patient_id, doctor_id, bed_id, admitted_on, requested_on, discharged_on, diagnosis, notes, status) " +
+                    "VALUES (@patientId, @doctorId, @bedId, @admittedOn, @requestedOn, NULL, @diagnosis, @notes, @status); " +
                     "SELECT LAST_INSERT_ID();", conn))
                 {
                     cmd.Parameters.AddWithValue("@patientId", a.PatientId);
                     cmd.Parameters.AddWithValue("@doctorId", a.DoctorId);
-                    cmd.Parameters.AddWithValue("@bedId", a.BedId);
+                    cmd.Parameters.AddWithValue("@bedId", waitlisted ? (object)DBNull.Value : a.BedId);
                     cmd.Parameters.AddWithValue("@admittedOn", a.AdmittedOn);
+                    cmd.Parameters.AddWithValue("@requestedOn", a.RequestedOn);
                     cmd.Parameters.AddWithValue("@diagnosis", (object)a.Diagnosis ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@notes", (object)a.Notes ?? DBNull.Value);
                     cmd.Parameters.AddWithValue("@status", a.Status);
                     a.Id = Convert.ToInt32(cmd.ExecuteScalar());
                 }
 
-                using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=1 WHERE id=@id", conn))
-                {
-                    cmd.Parameters.AddWithValue("@id", a.BedId);
-                    cmd.ExecuteNonQuery();
-                }
+                if (!waitlisted)
+                    SetBedOccupied(a.BedId, true, conn);
             }
 
             Admissions.Add(a);
 
-            var bed = GetBed(a.BedId);
-            if (bed != null)
-                bed.IsOccupied = true;
-
-            LogActivity("Admissions", "Admitted", $"Admitted: {PatientName(a.PatientId)} to {BedLabel(a.BedId)}", "🏥");
+            if (waitlisted)
+                LogActivity("Admissions", "Waitlisted", $"{PatientName(a.PatientId)} added to the admission waiting list ({a.AdmissionNo})", "⏳");
+            else
+                LogActivity("Admissions", "Admitted", $"Admitted: {PatientName(a.PatientId)} to {BedLabel(a.BedId)}", "🏥");
             return a;
+        }
+
+        // Moves a waitlisted patient into a free bed; the stay (and room charges) start now.
+        public static void AssignBed(Admission a, int bedId)
+        {
+            if (!AvailableBeds().Any(b => b.Id == bedId))
+                throw new InvalidOperationException("That bed is no longer available.");
+
+            TimeSpan waited = DateTime.Now - a.RequestedOn;
+            a.AssignBed(bedId, DateTime.Now);
+
+            using (var conn = Db.OpenConnection())
+            {
+                using (var cmd = new MySqlCommand(
+                    "UPDATE admissions SET bed_id=@bedId, admitted_on=@admittedOn, status=@status WHERE id=@id", conn))
+                {
+                    cmd.Parameters.AddWithValue("@bedId", a.BedId);
+                    cmd.Parameters.AddWithValue("@admittedOn", a.AdmittedOn);
+                    cmd.Parameters.AddWithValue("@status", a.Status);
+                    cmd.Parameters.AddWithValue("@id", a.Id);
+                    cmd.ExecuteNonQuery();
+                }
+                SetBedOccupied(a.BedId, true, conn);
+            }
+
+            LogActivity("Admissions", "Bed Assigned",
+                $"Admitted from waiting list: {PatientName(a.PatientId)} to {BedLabel(a.BedId)} after waiting {FormatDuration(waited)}", "🏥");
+        }
+
+        public static List<Admission> PendingAdmissions() =>
+            Admissions.Where(a => a.IsPending).OrderBy(a => a.RequestedOn).ToList();
+
+        private static void SetBedOccupied(int bedId, bool occupied, MySqlConnection conn)
+        {
+            using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=@occupied WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@occupied", occupied);
+                cmd.Parameters.AddWithValue("@id", bedId);
+                cmd.ExecuteNonQuery();
+            }
+
+            var bed = GetBed(bedId);
+            if (bed != null)
+                bed.IsOccupied = occupied;
+        }
+
+        public static string FormatDuration(TimeSpan span)
+        {
+            if (span.TotalMinutes < 60) return Math.Max(0, (int)span.TotalMinutes) + " min";
+            if (span.TotalHours < 24) return (int)span.TotalHours + " h " + span.Minutes + " min";
+            return (int)span.TotalDays + " d " + span.Hours + " h";
         }
 
         public static void Discharge(Admission a)
@@ -977,6 +961,7 @@ namespace HospitalSystem.Data
 
         public static void CancelAdmission(Admission a)
         {
+            bool wasPending = a.IsPending;
             a.Cancel();
 
             using (var conn = Db.OpenConnection())
@@ -988,18 +973,13 @@ namespace HospitalSystem.Data
                     cmd.ExecuteNonQuery();
                 }
 
-                using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=0 WHERE id=@id", conn))
-                {
-                    cmd.Parameters.AddWithValue("@id", a.BedId);
-                    cmd.ExecuteNonQuery();
-                }
+                if (a.BedId > 0)
+                    SetBedOccupied(a.BedId, false, conn);
             }
 
-            var bed = GetBed(a.BedId);
-            if (bed != null)
-                bed.IsOccupied = false;
-
-            LogActivity("Admissions", "Cancelled", $"Cancelled admission {a.AdmissionNo} for {PatientName(a.PatientId)}", "❌");
+            LogActivity("Admissions", "Cancelled", wasPending
+                ? $"Removed {PatientName(a.PatientId)} from the admission waiting list ({a.AdmissionNo})"
+                : $"Cancelled admission {a.AdmissionNo} for {PatientName(a.PatientId)}", "❌");
 
             // Admission status change feeds billing: void the auto bill for a mistaken admission.
             CancelAdmissionBill(a);
@@ -1130,7 +1110,8 @@ namespace HospitalSystem.Data
         // admitting never double-bills. Called by AdmissionsView right after AddAdmission.
         public static Bill EnsureAdmissionBill(Admission admission)
         {
-            if (admission == null) return null;
+            // Waitlisted: no bed means no ward and no room rate yet; the bill opens on AssignBed.
+            if (admission == null || admission.IsPending) return null;
 
             var existing = OpenBillForAdmission(admission.Id);
             if (existing != null) return existing;
@@ -1424,6 +1405,7 @@ namespace HospitalSystem.Data
 
         public static string BedLabel(int id)
         {
+            if (id <= 0) return "(waiting for bed)";
             var b = GetBed(id);
             return b != null ? b.Label : "(Unknown)";
         }
@@ -1550,8 +1532,13 @@ namespace HospitalSystem.Data
 
         public static List<Doctor> DoctorsOnDuty() => Doctors.Where(d => d.IsOnDuty && d.IsActive).ToList();
 
-        // -------------------- Activities & Alerts Helpers --------------------
-        public static void LogActivity(string module, string action, string description, string icon)
+        // -------------------- Activity Log --------------------
+        public const string SystemUser = "System";
+
+        // Every action in every module comes through here. The entry records who did it
+        // (the signed-in user, or "System" for automatic actions). Logging a module action
+        // also re-checks the alert conditions, so alerts follow what happens in the modules.
+        public static void LogActivity(string module, string action, string description, string icon, string username = null)
         {
             var item = new ActivityItem
             {
@@ -1559,153 +1546,219 @@ namespace HospitalSystem.Data
                 Action = action,
                 Description = description,
                 Icon = icon,
-                Timestamp = DateTime.Now
+                Timestamp = DateTime.Now,
+                Username = username ?? (CurrentUser != null ? CurrentUser.Username : SystemUser)
             };
 
             try
             {
                 using (var conn = Db.OpenConnection())
                 using (var cmd = new MySqlCommand(
-                    "INSERT INTO activity_log (module, action, description, icon, created_at) " +
-                    "VALUES (@module, @action, @description, @icon, @createdAt); SELECT LAST_INSERT_ID();", conn))
+                    "INSERT INTO activity_log (module, action, description, icon, created_at, username) " +
+                    "VALUES (@module, @action, @description, @icon, @createdAt, @username); SELECT LAST_INSERT_ID();", conn))
                 {
                     cmd.Parameters.AddWithValue("@module", item.Module);
                     cmd.Parameters.AddWithValue("@action", item.Action);
-                    cmd.Parameters.AddWithValue("@description", item.Description);
+                    cmd.Parameters.AddWithValue("@description", Truncate(item.Description, 255));
                     cmd.Parameters.AddWithValue("@icon", (object)item.Icon ?? "");
                     cmd.Parameters.AddWithValue("@createdAt", item.Timestamp);
+                    cmd.Parameters.AddWithValue("@username", Truncate(item.Username, 50));
                     item.Id = Convert.ToInt32(cmd.ExecuteScalar());
                 }
             }
-            catch { }
+            catch (MySqlException)
+            {
+                // The action itself already succeeded; a logging failure must not undo or block it.
+            }
 
-            Activities.Insert(0, item);
-            if (Activities.Count > 100)
-                Activities.RemoveAt(Activities.Count - 1);
+            if (module != AlertMonitor.ModuleName && module != "Security")
+                AlertMonitor.Evaluate();
         }
 
-        public static Alert AddAlert(Alert a)
+        private static string Truncate(string s, int max) =>
+            s == null || s.Length <= max ? s : s.Substring(0, max);
+
+        // Newest first. Every filter is optional; limit keeps a huge log from freezing the grid.
+        public static List<ActivityItem> QueryActivityLog(DateTime? from, DateTime? to, string module, string username, string search, int limit)
         {
-            if (a.CreatedOn == default)
-                a.CreatedOn = DateTime.Now;
-            a.Status = "Active";
+            var sql = new System.Text.StringBuilder(
+                "SELECT id, module, action, description, icon, created_at, username FROM activity_log WHERE 1=1");
+            var cmd = new MySqlCommand();
+            if (from.HasValue) { sql.Append(" AND created_at >= @from"); cmd.Parameters.AddWithValue("@from", from.Value); }
+            if (to.HasValue) { sql.Append(" AND created_at < @to"); cmd.Parameters.AddWithValue("@to", to.Value); }
+            if (!string.IsNullOrEmpty(module)) { sql.Append(" AND module = @module"); cmd.Parameters.AddWithValue("@module", module); }
+            if (!string.IsNullOrEmpty(username)) { sql.Append(" AND username = @username"); cmd.Parameters.AddWithValue("@username", username); }
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                sql.Append(" AND (description LIKE @search OR action LIKE @search)");
+                cmd.Parameters.AddWithValue("@search", "%" + search.Trim() + "%");
+            }
+            sql.Append(" ORDER BY created_at DESC, id DESC LIMIT @limit");
+            cmd.Parameters.AddWithValue("@limit", limit);
+
+            var list = new List<ActivityItem>();
+            using (var conn = Db.OpenConnection())
+            using (cmd)
+            {
+                cmd.Connection = conn;
+                cmd.CommandText = sql.ToString();
+                using (var r = cmd.ExecuteReader())
+                {
+                    while (r.Read())
+                    {
+                        list.Add(new ActivityItem
+                        {
+                            Id = r.GetInt32("id"),
+                            Module = r.GetString("module"),
+                            Action = r.GetString("action"),
+                            Description = r.GetString("description"),
+                            Icon = ReadString(r, "icon") ?? "",
+                            Timestamp = r.GetDateTime("created_at"),
+                            Username = ReadString(r, "username") ?? "(not recorded)"
+                        });
+                    }
+                }
+            }
+            return list;
+        }
+
+        public static List<string> ActivityLogModules()
+        {
+            var list = new List<string>();
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("SELECT DISTINCT module FROM activity_log ORDER BY module", conn))
+            using (var r = cmd.ExecuteReader())
+            {
+                while (r.Read())
+                    list.Add(r.GetString(0));
+            }
+            return list;
+        }
+
+        // -------------------- Alerts --------------------
+        // Alerts are only ever raised and resolved by AlertMonitor from conditions in the
+        // other modules; staff can acknowledge one, which hides it until the condition
+        // clears (and raises it again if the condition comes back later).
+
+        public static List<Alert> ActiveAlerts() =>
+            Alerts.Where(a => a.IsActive).OrderBy(a => a.SeverityRank).ThenByDescending(a => a.CreatedOn).ToList();
+
+        public static List<Alert> AcknowledgedAlerts() =>
+            Alerts.Where(a => a.IsAcknowledged).OrderBy(a => a.SeverityRank).ThenByDescending(a => a.CreatedOn).ToList();
+
+        internal static Alert RaiseAlert(string sourceKey, string module, string title, string message, string severity)
+        {
+            var a = new Alert
+            {
+                SourceKey = sourceKey,
+                Module = module,
+                Title = title,
+                Message = message,
+                Severity = severity,
+                Status = "Active",
+                IsAuto = true,
+                CreatedOn = DateTime.Now
+            };
 
             using (var conn = Db.OpenConnection())
             using (var cmd = new MySqlCommand(
-                "INSERT INTO alerts (title, message, severity, status, created_on) " +
-                "VALUES (@title, @message, @severity, @status, @createdOn); SELECT LAST_INSERT_ID();", conn))
+                "INSERT INTO alerts (title, message, severity, status, created_on, source_key, module) " +
+                "VALUES (@title, @message, @severity, @status, @createdOn, @sourceKey, @module); SELECT LAST_INSERT_ID();", conn))
             {
                 cmd.Parameters.AddWithValue("@title", a.Title);
-                cmd.Parameters.AddWithValue("@message", a.Message);
+                cmd.Parameters.AddWithValue("@message", Truncate(a.Message, 500));
                 cmd.Parameters.AddWithValue("@severity", a.Severity);
                 cmd.Parameters.AddWithValue("@status", a.Status);
                 cmd.Parameters.AddWithValue("@createdOn", a.CreatedOn);
+                cmd.Parameters.AddWithValue("@sourceKey", a.SourceKey);
+                cmd.Parameters.AddWithValue("@module", a.Module);
                 a.Id = Convert.ToInt32(cmd.ExecuteScalar());
             }
 
             Alerts.Add(a);
-            LogActivity("Alerts", "Created", $"Emergency alert posted: {a.Title}", "⚠️");
+            LogActivity(AlertMonitor.ModuleName, "Raised", $"[{severity}] {title}: {message} (from {module})", "⚠️", SystemUser);
             return a;
         }
 
-        public static void ResolveAlert(int alertId)
+        // Same condition still holding, but its details changed (e.g. 1 ICU bed left -> 0).
+        internal static void UpdateAlert(Alert a, string title, string message, string severity)
         {
-            if (alertId < 0)
+            bool escalated = SeverityRankOf(severity) < a.SeverityRank;
+            a.Title = title;
+            a.Message = message;
+            a.Severity = severity;
+            // A worse situation than the one that was acknowledged needs attention again.
+            if (escalated && a.IsAcknowledged)
             {
-                DismissedAutoAlertIds.Add(alertId);
-                LogActivity("Alerts", "Resolved", "Auto alert acknowledged/dismissed", "✅");
-                return;
+                a.Status = "Active";
+                a.AcknowledgedBy = null;
             }
 
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "UPDATE alerts SET title=@title, message=@message, severity=@severity, status=@status, acknowledged_by=@ackBy WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@title", title);
+                cmd.Parameters.AddWithValue("@message", Truncate(message, 500));
+                cmd.Parameters.AddWithValue("@severity", severity);
+                cmd.Parameters.AddWithValue("@status", a.Status);
+                cmd.Parameters.AddWithValue("@ackBy", (object)a.AcknowledgedBy ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@id", a.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            if (escalated)
+                LogActivity(AlertMonitor.ModuleName, "Escalated", $"[{severity}] {title}: {message}", "⚠️", SystemUser);
+        }
+
+        // The condition cleared: close the alert (history stays in the alerts table).
+        internal static void AutoResolveAlert(Alert a)
+        {
+            a.Status = "Resolved";
+            a.ResolvedOn = DateTime.Now;
+            Alerts.Remove(a);
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE alerts SET status='Resolved', resolved_on=@resolvedOn WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@resolvedOn", a.ResolvedOn);
+                cmd.Parameters.AddWithValue("@id", a.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity(AlertMonitor.ModuleName, "Auto-resolved", $"{a.Title} cleared: condition no longer holds", "✅", SystemUser);
+        }
+
+        // Staff saw it and are handling it. Old manual alerts (no trigger) are closed outright.
+        public static void AcknowledgeAlert(int alertId)
+        {
             var a = Alerts.FirstOrDefault(x => x.Id == alertId);
-            if (a != null)
+            if (a == null || !a.IsActive) return;
+
+            bool manual = a.SourceKey == null;
+            a.Status = manual ? "Resolved" : "Acknowledged";
+            a.AcknowledgedBy = CurrentUser != null ? CurrentUser.DisplayName : SystemUser;
+            if (manual)
             {
-                a.Status = "Resolved";
+                a.ResolvedOn = DateTime.Now;
                 Alerts.Remove(a);
-                try
-                {
-                    using (var conn = Db.OpenConnection())
-                    using (var cmd = new MySqlCommand("UPDATE alerts SET status='Resolved' WHERE id=@id", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@id", alertId);
-                        cmd.ExecuteNonQuery();
-                    }
-                }
-                catch { }
-
-                LogActivity("Alerts", "Resolved", $"Resolved alert: {a.Title}", "✅");
             }
+
+            using (var conn = Db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "UPDATE alerts SET status=@status, acknowledged_by=@ackBy, resolved_on=@resolvedOn WHERE id=@id", conn))
+            {
+                cmd.Parameters.AddWithValue("@status", a.Status);
+                cmd.Parameters.AddWithValue("@ackBy", a.AcknowledgedBy);
+                cmd.Parameters.AddWithValue("@resolvedOn", (object)a.ResolvedOn ?? DBNull.Value);
+                cmd.Parameters.AddWithValue("@id", a.Id);
+                cmd.ExecuteNonQuery();
+            }
+
+            LogActivity(AlertMonitor.ModuleName, manual ? "Resolved" : "Acknowledged", $"{a.Title}: {a.Message}", "👁");
         }
 
-        public static List<Alert> ActiveAlerts()
-        {
-            var result = new List<Alert>();
-
-            // 1. Dynamic auto-detected condition: ICU Bed Capacity
-            var icuBeds = Beds.Where(b => b.Ward == "ICU").ToList();
-            if (icuBeds.Count > 0)
-            {
-                int availableIcu = icuBeds.Count(b => !b.IsOccupied);
-                int autoIcuId = -100;
-                if (availableIcu <= 1 && !DismissedAutoAlertIds.Contains(autoIcuId))
-                {
-                    result.Add(new Alert
-                    {
-                        Id = autoIcuId,
-                        Title = availableIcu == 0 ? "ICU Bed Full" : "ICU Bed Critical",
-                        Message = availableIcu == 0 ? "All ICU beds are currently occupied" : $"Only {availableIcu} of {icuBeds.Count} ICU beds remaining",
-                        Severity = "High",
-                        CreatedOn = DateTime.Now,
-                        IsAuto = true
-                    });
-                }
-            }
-
-            // 2. Dynamic auto-detected condition: Staff Shortage per department
-            foreach (var dept in Departments)
-            {
-                int deptId = dept.Id;
-                int autoDeptId = -200 - deptId;
-                var deptDoctors = Doctors.Where(d => d.DepartmentId == deptId && d.IsActive).ToList();
-                if (deptDoctors.Count > 0 && !deptDoctors.Any(d => d.IsOnDuty) && !DismissedAutoAlertIds.Contains(autoDeptId))
-                {
-                    result.Add(new Alert
-                    {
-                        Id = autoDeptId,
-                        Title = "Staff Shortage",
-                        Message = $"{dept.Name} has no doctor currently on duty",
-                        Severity = "Medium",
-                        CreatedOn = DateTime.Now,
-                        IsAuto = true
-                    });
-                }
-            }
-
-            // 3. Dynamic auto-detected condition: High Overall Bed Occupancy (>80%)
-            int totalBeds = Beds.Count;
-            int occupiedBeds = Beds.Count(b => b.IsOccupied);
-            int autoOccupancyId = -300;
-            if (totalBeds > 0 && ((double)occupiedBeds / totalBeds) >= 0.8 && !DismissedAutoAlertIds.Contains(autoOccupancyId))
-            {
-                result.Add(new Alert
-                {
-                    Id = autoOccupancyId,
-                    Title = "High Bed Occupancy",
-                    Message = $"{occupiedBeds} of {totalBeds} beds occupied ({Math.Round((double)occupiedBeds / totalBeds * 100)}%)",
-                    Severity = "Medium",
-                    CreatedOn = DateTime.Now,
-                    IsAuto = true
-                });
-            }
-
-            // 4. Active manual alerts
-            result.AddRange(Alerts.Where(a => a.Status == "Active"));
-
-            // Sort by Severity (High first, then Medium, then Low), then by CreatedOn
-            return result
-                .OrderBy(a => a.Severity == "High" ? 0 : a.Severity == "Medium" ? 1 : 2)
-                .ThenByDescending(a => a.CreatedOn)
-                .ToList();
-        }
+        private static int SeverityRankOf(string severity) =>
+            severity == "High" ? 0 : severity == "Medium" ? 1 : 2;
     }
 }

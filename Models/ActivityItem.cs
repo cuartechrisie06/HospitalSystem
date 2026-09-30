@@ -10,5 +10,6 @@ namespace HospitalSystem.Models
         public string Description { get; set; }
         public string Icon { get; set; }
         public DateTime Timestamp { get; set; }
+        public string Username { get; set; }   // who did it; "System" for automatic actions (alerts)
     }
 }

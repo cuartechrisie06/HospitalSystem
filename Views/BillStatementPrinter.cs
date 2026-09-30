@@ -39,6 +39,13 @@ namespace HospitalSystem.Views
             document.DocumentName = "Statement " + bill.BillNo;
             document.BeginPrint += (s, e) => { nextRow = 0; pageNo = 0; };
             document.PrintPage += Document_PrintPage;
+            // Log real printouts only; building the on-screen preview also "prints" (to a preview controller).
+            document.EndPrint += (s, e) =>
+            {
+                if (e.PrintAction == PrintAction.PrintToPrinter && !e.Cancel)
+                    HospitalData.LogActivity("Billing", "Statement Printed",
+                        $"Printed statement of account for {bill.BillNo} ({HospitalData.PatientName(bill.PatientId)}, {pageNo} page(s))", "🖨");
+            };
         }
 
         public void ShowPreview(IWin32Window owner)

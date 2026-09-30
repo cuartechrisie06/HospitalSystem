@@ -19,6 +19,8 @@ namespace HospitalSystem.Forms
         private Button btnAppointments;
         private Button btnAdmissions;
         private Button btnBilling;
+        private Button btnActivityLog;
+        private Panel sepActivityLog;
         private Button btnSignOut;
         private UserControl currentView;
 
@@ -34,7 +36,7 @@ namespace HospitalSystem.Forms
             // data loading must never run then, or it tries to open a DB connection.
             if (!DesignTimeHelper.IsDesignMode)
             {
-                UpdateUserLabel();
+                ApplyUserAccess();
                 ShowOverview();
             }
         }
@@ -69,6 +71,12 @@ namespace HospitalSystem.Forms
             btnBilling.Click += BtnBilling_Click;
             panelSidebar.Controls.Add(btnBilling);
 
+            // Administrators only; shown/hidden by ApplyUserAccess() on every sign-in.
+            btnActivityLog = CreateNavButton("Activity Log", 370);
+            btnActivityLog.Click += BtnActivityLog_Click;
+            btnActivityLog.Visible = false;
+            panelSidebar.Controls.Add(btnActivityLog);
+
             AddSidebarSeparators();
         }
 
@@ -86,6 +94,10 @@ namespace HospitalSystem.Forms
             panelSidebar.Controls.Add(CreateSeparator(216, false));
             panelSidebar.Controls.Add(CreateSeparator(266, false));
             panelSidebar.Controls.Add(CreateSeparator(316, false));
+
+            sepActivityLog = CreateSeparator(366, false);
+            sepActivityLog.Visible = false;
+            panelSidebar.Controls.Add(sepActivityLog);
 
             // above the user / sign-out block pinned at the bottom
             Panel bottomLine = new Panel();
@@ -112,17 +124,21 @@ namespace HospitalSystem.Forms
             return line;
         }
 
-        private void UpdateUserLabel()
+        // Shows who is signed in and which modules their role can open.
+        private void ApplyUserAccess()
         {
-            lblUser.Text = HospitalData.CurrentUser != null
-                ? HospitalData.CurrentUser.DisplayName
-                : "User";
+            var user = HospitalData.CurrentUser;
+            lblUser.Text = user != null ? user.DisplayName + "\n" + user.Role : "User";
+
+            bool admin = HospitalData.IsAdmin;
+            btnActivityLog.Visible = admin;
+            sepActivityLog.Visible = admin;
         }
 
         private void DashboardForm_Load(object sender, EventArgs e)
         {
             if (DesignTimeHelper.IsDesignMode) return;
-            UpdateUserLabel();
+            ApplyUserAccess();
             ShowOverview();
         }
 
@@ -132,6 +148,25 @@ namespace HospitalSystem.Forms
         private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(new Views.AppointmentsView());
         private void BtnAdmissions_Click(object sender, EventArgs e) => ShowView(new Views.AdmissionsView());
         private void BtnBilling_Click(object sender, EventArgs e) => ShowView(new Views.BillingView());
+
+        private void BtnActivityLog_Click(object sender, EventArgs e)
+        {
+            if (!HospitalData.IsAdmin) return;   // the button is hidden for other roles anyway
+            ShowView(new Views.ActivityLogView());
+        }
+
+        // Jump from an alert to the module that raised it.
+        private void OpenModule(string module)
+        {
+            switch (module)
+            {
+                case "Admissions": ShowView(new Views.AdmissionsView()); break;
+                case "Doctors": ShowView(new Views.DoctorsView()); break;
+                case "Appointments": ShowView(new Views.AppointmentsView()); break;
+                case "Billing": ShowView(new Views.BillingView()); break;
+                case "Patients": ShowView(new Views.PatientsView()); break;
+            }
+        }
 
         private void InitializeComponent()
         {
@@ -174,7 +209,7 @@ namespace HospitalSystem.Forms
 
             lblUser = new Label();
             lblUser.Dock = DockStyle.Bottom;
-            lblUser.Height = 40;
+            lblUser.Height = 44;
             lblUser.ForeColor = Color.LightGray;
             lblUser.Font = new Font("Segoe UI", 9F);
             lblUser.TextAlign = ContentAlignment.MiddleCenter;
@@ -192,8 +227,16 @@ namespace HospitalSystem.Forms
             panelContent.BringToFront();
         }
 
+        private static readonly Color Navy = Color.FromArgb(30, 58, 138);
+        private static readonly Color Red = Color.FromArgb(185, 28, 28);
+        private static readonly Color Amber = Color.FromArgb(217, 119, 6);
+        private static readonly Color Green = Color.FromArgb(22, 101, 52);
+
         private void ShowOverview()
         {
+            // Time-based rules (overdue appointments, long waits) are re-checked on every visit.
+            AlertMonitor.Evaluate();
+
             panelContent.Controls.Clear();
 
             var overview = new Panel();
@@ -201,263 +244,54 @@ namespace HospitalSystem.Forms
             overview.BackColor = Color.FromArgb(243, 244, 246);
             overview.AutoScroll = true;
 
-            // ===== 1. TOP: Summary Cards (4) =====
+            // ===== 1. Summary cards =====
             var tlTop = new TableLayoutPanel();
             tlTop.Dock = DockStyle.Top;
-            tlTop.Height = 100;
-            tlTop.ColumnCount = 4;
+            tlTop.Height = 112;
+            tlTop.ColumnCount = 5;
             tlTop.RowCount = 1;
-            tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-            tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-            tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
-            tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+            for (int i = 0; i < 5; i++)
+                tlTop.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20F));
 
             int occupied = HospitalData.OccupiedBedsCount();
             int totalBeds = HospitalData.TotalBedsCount();
             double rate = HospitalData.OccupancyRate();
-
-            tlTop.Controls.Add(CreateSummaryCard("Patients", HospitalData.Patients.Count.ToString()), 0, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Appointments", HospitalData.Appointments.Count.ToString()), 1, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Admissions", HospitalData.ActiveAdmissions().Count.ToString()), 2, 0);
-            tlTop.Controls.Add(CreateSummaryCard("Bed Occupancy", $"{occupied}/{totalBeds} ({rate:0}%)"), 3, 0);
-
-            // ===== 2. Doctors on Duty + Emergency Alerts =====
-            var tlRow2 = new TableLayoutPanel();
-            tlRow2.Dock = DockStyle.Top;
-            tlRow2.Height = 200;
-            tlRow2.ColumnCount = 2;
-            tlRow2.RowCount = 1;
-            tlRow2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            tlRow2.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            tlRow2.Padding = new Padding(0, 10, 0, 0);
-
-            // Doctors on Duty
-            var pnlDoctors = CreateCardPanel();
-            var lblDoctors = new Label
-            {
-                Text = "Doctors on Duty",
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Dock = DockStyle.Top,
-                Height = 26,
-                ForeColor = Color.FromArgb(30, 58, 138)
-            };
-
-            var lvDoctors = new ListView
-            {
-                Dock = DockStyle.Fill,
-                View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                BorderStyle = BorderStyle.None,
-                Font = new Font("Segoe UI", 9F)
-            };
-            lvDoctors.Columns.Add("Doctor", 140);
-            lvDoctors.Columns.Add("Specialization", 120);
-            lvDoctors.Columns.Add("Department", 100);
-            lvDoctors.Columns.Add("Status", 80);
-
-            var onDuty = HospitalData.DoctorsOnDuty();
-            if (onDuty.Count == 0)
-                lvDoctors.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—", "—" }));
-            else
-            {
-                foreach (var d in onDuty)
-                {
-                    var item = new ListViewItem("Dr. " + d.FullName);
-                    item.SubItems.Add(d.Specialization);
-                    item.SubItems.Add(HospitalData.DepartmentName(d.DepartmentId));
-                    item.SubItems.Add("On Duty");
-                    lvDoctors.Items.Add(item);
-                }
-            }
-            pnlDoctors.Controls.Add(lvDoctors);
-            pnlDoctors.Controls.Add(lblDoctors);
-
-            // Emergency Alerts
-            var pnlAlerts = CreateCardPanel();
-            var pnlAlertHeader = new Panel
-            {
-                Dock = DockStyle.Top,
-                Height = 28
-            };
-
-            var lblAlerts = new Label
-            {
-                Text = "Emergency Alerts",
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                ForeColor = Color.FromArgb(185, 28, 28),
-                AutoSize = true,
-                Location = new Point(0, 4)
-            };
-
-            var btnNewAlert = new Button
-            {
-                Text = "+ New Alert",
-                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
-                BackColor = Color.FromArgb(185, 28, 28),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Size = new Size(88, 24),
-                Location = new Point(pnlAlerts.Width - 98, 2),
-                Anchor = AnchorStyles.Top | AnchorStyles.Right,
-                Cursor = Cursors.Hand
-            };
-            btnNewAlert.FlatAppearance.BorderSize = 0;
-            btnNewAlert.Click += (s, e) => ShowNewAlertDialog();
-
-            pnlAlertHeader.Controls.Add(lblAlerts);
-            pnlAlertHeader.Controls.Add(btnNewAlert);
-
-            var flAlerts = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                AutoScroll = true,
-                FlowDirection = FlowDirection.TopDown,
-                WrapContents = false,
-                Padding = new Padding(0)
-            };
-
+            var today = HospitalData.AppointmentsToday();
+            int todayOpen = today.Count(a => a.IsOpen);
+            int next7 = UpcomingAppointments().Count;
+            var pending = HospitalData.PendingAdmissions();
             var alerts = HospitalData.ActiveAlerts();
-            if (alerts.Count == 0)
-            {
-                var pnlNormal = new Panel
-                {
-                    Width = 420,
-                    Height = 44,
-                    BackColor = Color.FromArgb(240, 253, 244),
-                    Padding = new Padding(8)
-                };
-                var lblNormal = new Label
-                {
-                    Text = "✔  All systems normal — No active emergency alerts",
-                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                    ForeColor = Color.FromArgb(22, 101, 52),
-                    AutoSize = true,
-                    Location = new Point(10, 12)
-                };
-                pnlNormal.Controls.Add(lblNormal);
-                flAlerts.Controls.Add(pnlNormal);
-            }
-            else
-            {
-                foreach (var a in alerts)
-                    flAlerts.Controls.Add(CreateAlertItem(a));
-            }
+            int highAlerts = alerts.Count(a => a.Severity == "High");
 
-            pnlAlerts.Controls.Add(flAlerts);
-            pnlAlerts.Controls.Add(pnlAlertHeader);
+            tlTop.Controls.Add(CreateSummaryCard("Appointments Today", today.Count.ToString(),
+                $"{todayOpen} still to see  •  {next7} in the next 7 days", Navy), 0, 0);
+            tlTop.Controls.Add(CreateSummaryCard("Bed Occupancy", $"{occupied}/{totalBeds}",
+                $"{rate:0}% occupied  •  {totalBeds - occupied} free",
+                rate >= 100 ? Red : rate >= AlertMonitor.HighOccupancyRate * 100 ? Amber : Navy), 1, 0);
+            tlTop.Controls.Add(CreateSummaryCard("Admitted Patients", HospitalData.ActiveAdmissions().Count.ToString(),
+                "currently in a bed", Navy), 2, 0);
+            tlTop.Controls.Add(CreateSummaryCard("Pending Admissions", pending.Count.ToString(),
+                pending.Count == 0 ? "no one waiting for a bed" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
+                pending.Count == 0 ? Navy : Amber), 3, 0);
+            tlTop.Controls.Add(CreateSummaryCard("Active Alerts", alerts.Count.ToString(),
+                alerts.Count == 0 ? "all clear" : $"{highAlerts} high priority",
+                highAlerts > 0 ? Red : alerts.Count > 0 ? Amber : Green), 4, 0);
 
-            tlRow2.Controls.Add(pnlDoctors, 0, 0);
-            tlRow2.Controls.Add(pnlAlerts, 1, 0);
+            // ===== 2. Alerts + Pending admissions =====
+            var tlRow2 = MakeRow(240, 55F, 45F);
+            tlRow2.Controls.Add(BuildAlertsCard(alerts), 0, 0);
+            tlRow2.Controls.Add(BuildPendingAdmissionsCard(pending), 1, 0);
 
-            // ===== 3. Upcoming Appointments + Recent Activity =====
-            var tlRow3 = new TableLayoutPanel();
-            tlRow3.Dock = DockStyle.Top;
-            tlRow3.Height = 210;
-            tlRow3.ColumnCount = 2;
-            tlRow3.RowCount = 1;
-            tlRow3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
-            tlRow3.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
-            tlRow3.Padding = new Padding(0, 10, 0, 0);
+            // ===== 3. Appointments + Bed occupancy by ward =====
+            var tlRow3 = MakeRow(240, 55F, 45F);
+            tlRow3.Controls.Add(BuildAppointmentsCard(), 0, 0);
+            tlRow3.Controls.Add(BuildOccupancyCard(), 1, 0);
 
-            // Upcoming Appointments
-            var pnlUpcoming = CreateCardPanel();
-            var lblUpcoming = new Label
-            {
-                Text = "Upcoming Appointments (Next 7 Days)",
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Dock = DockStyle.Top,
-                Height = 26,
-                ForeColor = Color.FromArgb(30, 58, 138)
-            };
-
-            var lvUpcoming = new ListView
-            {
-                Dock = DockStyle.Fill,
-                View = View.Details,
-                FullRowSelect = true,
-                GridLines = true,
-                BorderStyle = BorderStyle.None,
-                Font = new Font("Segoe UI", 9F)
-            };
-            lvUpcoming.Columns.Add("Date", 90);
-            lvUpcoming.Columns.Add("Time", 70);
-            lvUpcoming.Columns.Add("Patient", 130);
-            lvUpcoming.Columns.Add("Doctor", 110);
-            lvUpcoming.Columns.Add("Status", 80);
-
-            var upcoming = HospitalData.Appointments
-                .Where(a => a.ScheduledOn >= DateTime.Now && a.ScheduledOn <= DateTime.Now.AddDays(7) && a.Status != "Cancelled")
-                .OrderBy(a => a.ScheduledOn)
-                .ToList();
-
-            if (upcoming.Count == 0)
-                lvUpcoming.Items.Add(new ListViewItem(new[] { "—", "—", "No upcoming appointments", "—", "—" }));
-            else
-            {
-                foreach (var a in upcoming)
-                {
-                    var item = new ListViewItem(a.ScheduledOn.ToString("MMM dd, yyyy"));
-                    item.SubItems.Add(a.ScheduledOn.ToString("hh:mm tt"));
-                    item.SubItems.Add(HospitalData.PatientName(a.PatientId));
-                    item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
-                    item.SubItems.Add(a.Status);
-                    lvUpcoming.Items.Add(item);
-                }
-            }
-            pnlUpcoming.Controls.Add(lvUpcoming);
-            pnlUpcoming.Controls.Add(lblUpcoming);
-
-            // Recent Activity
-            var pnlActivity = CreateCardPanel();
-            var lblActivity = new Label
-            {
-                Text = "Recent Activity",
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
-                Dock = DockStyle.Top,
-                Height = 26,
-                ForeColor = Color.FromArgb(30, 58, 138)
-            };
-
-            var lbActivity = new ListBox
-            {
-                Dock = DockStyle.Fill,
-                Font = new Font("Segoe UI", 9F),
-                BorderStyle = BorderStyle.None,
-                IntegralHeight = false
-            };
-
-            if (HospitalData.Activities.Count == 0)
-            {
-                lbActivity.Items.Add("No recent activity recorded");
-            }
-            else
-            {
-                foreach (var act in HospitalData.Activities.Take(15))
-                {
-                    string timeStr = GetRelativeTime(act.Timestamp);
-                    lbActivity.Items.Add($"{act.Icon}  {act.Description}  ({timeStr})");
-                }
-            }
-
-            pnlActivity.Controls.Add(lbActivity);
-            pnlActivity.Controls.Add(lblActivity);
-
-            tlRow3.Controls.Add(pnlUpcoming, 0, 0);
-            tlRow3.Controls.Add(pnlActivity, 1, 0);
-
-            // ===== 4. Charts =====
-            var tlBottom = new TableLayoutPanel();
-            tlBottom.Dock = DockStyle.Top;
-            tlBottom.Height = 190;
-            tlBottom.ColumnCount = 2;
-            tlBottom.RowCount = 1;
-            tlBottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            tlBottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
-            tlBottom.Padding = new Padding(0, 10, 0, 0);
-
-            tlBottom.Controls.Add(CreateSimpleBarChart("Appointments per Day (Last 7 Days)", GetAppointmentsPerDay()), 0, 0);
-            tlBottom.Controls.Add(CreateSimpleBarChart("Admissions per Month", GetAdmissionsPerMonth()), 1, 0);
+            // ===== 4. Doctors on duty + charts =====
+            var tlBottom = MakeRow(200, 34F, 33F, 33F);
+            tlBottom.Controls.Add(BuildDoctorsCard(), 0, 0);
+            tlBottom.Controls.Add(CreateSimpleBarChart("Appointments per Day (Last 7 Days)", GetAppointmentsPerDay()), 1, 0);
+            tlBottom.Controls.Add(CreateSimpleBarChart("Admissions per Month", GetAdmissionsPerMonth()), 2, 0);
 
             // Add all sections (order important for docking)
             overview.Controls.Add(tlBottom);
@@ -468,10 +302,109 @@ namespace HospitalSystem.Forms
             ShowView(new HostView(overview));
         }
 
-        private Panel CreateAlertItem(Alert a)
+        private static TableLayoutPanel MakeRow(int height, params float[] widths)
         {
-            Color bg, border;
-            switch (a.Severity)
+            var tl = new TableLayoutPanel();
+            tl.Dock = DockStyle.Top;
+            tl.Height = height;
+            tl.ColumnCount = widths.Length;
+            tl.RowCount = 1;
+            foreach (var w in widths)
+                tl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, w));
+            tl.Padding = new Padding(0, 10, 0, 0);
+            return tl;
+        }
+
+        private static Label MakeCardTitle(string text, Color color)
+        {
+            return new Label
+            {
+                Text = text,
+                UseMnemonic = false,   // show "&" literally
+                Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                Dock = DockStyle.Top,
+                Height = 26,
+                ForeColor = color
+            };
+        }
+
+        private static ListView MakeListView(params (string Header, int Width)[] columns)
+        {
+            var lv = new ListView
+            {
+                Dock = DockStyle.Fill,
+                View = View.Details,
+                FullRowSelect = true,
+                GridLines = true,
+                BorderStyle = BorderStyle.None,
+                Font = new Font("Segoe UI", 9F)
+            };
+            foreach (var c in columns)
+                lv.Columns.Add(c.Header, c.Width);
+            return lv;
+        }
+
+        // ---------- Alerts ----------
+        private Panel BuildAlertsCard(System.Collections.Generic.List<Alert> alerts)
+        {
+            var card = CreateCardPanel();
+            int acknowledged = HospitalData.AcknowledgedAlerts().Count;
+            var title = MakeCardTitle("Alerts" + (acknowledged > 0 ? $"    ({acknowledged} acknowledged, still ongoing)" : ""), Red);
+
+            var hint = new Label
+            {
+                Text = "Raised automatically by the other modules; each clears itself once fixed.",
+                Dock = DockStyle.Top,
+                Height = 18,
+                Font = new Font("Segoe UI", 8F),
+                ForeColor = Color.Gray
+            };
+
+            var flAlerts = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                FlowDirection = FlowDirection.TopDown,
+                WrapContents = false,
+                Padding = new Padding(0, 4, 0, 0)
+            };
+            // Stretch every alert row to the list width.
+            flAlerts.Resize += (s, e) =>
+            {
+                foreach (Control c in flAlerts.Controls)
+                    c.Width = Math.Max(200, flAlerts.ClientSize.Width - 6);
+            };
+
+            if (alerts.Count == 0)
+            {
+                var ok = new Label
+                {
+                    Text = "✔  All clear — no active alerts",
+                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                    ForeColor = Green,
+                    BackColor = Color.FromArgb(240, 253, 244),
+                    TextAlign = ContentAlignment.MiddleLeft,
+                    Padding = new Padding(8, 0, 0, 0),
+                    Width = 420,
+                    Height = 40
+                };
+                flAlerts.Controls.Add(ok);
+            }
+            else
+            {
+                foreach (var a in alerts)
+                    flAlerts.Controls.Add(CreateAlertItem(a));
+            }
+
+            card.Controls.Add(flAlerts);
+            card.Controls.Add(hint);
+            card.Controls.Add(title);
+            return card;
+        }
+
+        private static void SeverityColors(string severity, out Color bg, out Color border)
+        {
+            switch (severity)
             {
                 case "High":
                     bg = Color.FromArgb(254, 226, 226);
@@ -486,14 +419,19 @@ namespace HospitalSystem.Forms
                     border = Color.FromArgb(59, 130, 246);
                     break;
             }
+        }
+
+        private Panel CreateAlertItem(Alert a)
+        {
+            Color bg, border;
+            SeverityColors(a.Severity, out bg, out border);
 
             var p = new Panel
             {
-                Width = 430,
-                Height = 52,
+                Width = 420,
+                Height = 56,
                 Margin = new Padding(0, 0, 0, 5),
                 BackColor = bg,
-                Padding = new Padding(8),
                 Cursor = Cursors.Hand
             };
 
@@ -503,14 +441,13 @@ namespace HospitalSystem.Forms
                     e.Graphics.DrawLine(pen, 0, 0, 0, p.Height);
             };
 
-            string titlePrefix = a.IsAuto ? "⚡ [AUTO] " : "⚠️ ";
             var lblTitle = new Label
             {
-                Text = titlePrefix + a.Title,
+                Text = (a.Severity == "High" ? "⚠ " : "") + a.Title + (a.Module != null ? "   ·   " + a.Module : ""),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(30, 30, 30),
                 AutoSize = true,
-                Location = new Point(10, 4),
+                Location = new Point(10, 5),
                 Cursor = Cursors.Hand
             };
 
@@ -519,28 +456,29 @@ namespace HospitalSystem.Forms
                 Text = a.Message,
                 Font = new Font("Segoe UI", 8F),
                 ForeColor = Color.FromArgb(70, 70, 70),
-                AutoSize = true,
-                Location = new Point(10, 25),
+                Location = new Point(10, 24),
+                Size = new Size(p.Width - 110, 30),
+                Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right,
                 Cursor = Cursors.Hand
             };
 
-            var btnResolve = new Button
+            var btnAck = new Button
             {
-                Text = "Resolve",
+                Text = "Acknowledge",
                 Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
-                Size = new Size(64, 22),
-                Location = new Point(p.Width - 74, 14),
+                Size = new Size(86, 24),
+                Location = new Point(p.Width - 94, 16),
                 Anchor = AnchorStyles.Top | AnchorStyles.Right,
                 FlatStyle = FlatStyle.Flat,
                 BackColor = Color.White,
                 ForeColor = border,
                 Cursor = Cursors.Hand
             };
-            btnResolve.FlatAppearance.BorderColor = border;
-            btnResolve.FlatAppearance.BorderSize = 1;
-            btnResolve.Click += (s, e) =>
+            btnAck.FlatAppearance.BorderColor = border;
+            btnAck.FlatAppearance.BorderSize = 1;
+            btnAck.Click += (s, e) =>
             {
-                HospitalData.ResolveAlert(a.Id);
+                HospitalData.AcknowledgeAlert(a.Id);
                 ShowOverview();
             };
 
@@ -551,46 +489,38 @@ namespace HospitalSystem.Forms
 
             p.Controls.Add(lblTitle);
             p.Controls.Add(lblMsg);
-            p.Controls.Add(btnResolve);
+            p.Controls.Add(btnAck);
             return p;
         }
 
         private void ShowAlertDetailsDialog(Alert a)
         {
+            Color bg, headerColor;
+            SeverityColors(a.Severity, out bg, out headerColor);
+
             using (var dlg = new Form())
             {
-                dlg.Text = "Emergency Alert Details";
-                dlg.Size = new Size(420, 290);
+                dlg.Text = "Alert Details";
+                dlg.Size = new Size(460, 300);
                 dlg.StartPosition = FormStartPosition.CenterParent;
                 dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dlg.MaximizeBox = false;
                 dlg.MinimizeBox = false;
                 dlg.BackColor = Color.White;
 
-                Color headerColor = a.Severity == "High" ? Color.FromArgb(185, 28, 28) :
-                                   a.Severity == "Medium" ? Color.FromArgb(217, 119, 6) :
-                                   Color.FromArgb(37, 99, 235);
-
-                var pnlHeader = new Panel
+                var pnlHeader = new Panel { Dock = DockStyle.Top, Height = 50, BackColor = headerColor };
+                pnlHeader.Controls.Add(new Label
                 {
-                    Dock = DockStyle.Top,
-                    Height = 50,
-                    BackColor = headerColor
-                };
-
-                var lblDlgTitle = new Label
-                {
-                    Text = $"{(a.IsAuto ? "[AUTO] " : "")}{a.Title}",
+                    Text = a.Title,
                     Font = new Font("Segoe UI", 11F, FontStyle.Bold),
                     ForeColor = Color.White,
                     Location = new Point(15, 12),
                     AutoSize = true
-                };
-                pnlHeader.Controls.Add(lblDlgTitle);
+                });
 
                 var lblSev = new Label
                 {
-                    Text = $"Severity: {a.Severity}   •   Time: {a.CreatedOn:MMM dd, yyyy hh:mm tt}",
+                    Text = $"Severity: {a.Severity}   •   Raised by: {a.Module ?? "manual (legacy)"}   •   Since {a.CreatedOn:MMM dd, hh:mm tt}",
                     Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                     ForeColor = headerColor,
                     Location = new Point(18, 65),
@@ -599,32 +529,41 @@ namespace HospitalSystem.Forms
 
                 var lblDesc = new Label
                 {
-                    Text = a.Message,
+                    Text = a.Message + "\n\nThis alert clears by itself once the condition is fixed in " + (a.Module ?? "the related module") +
+                           ". Acknowledging hides it until then.",
                     Font = new Font("Segoe UI", 9.5F),
                     ForeColor = Color.FromArgb(55, 65, 81),
-                    Location = new Point(18, 95),
-                    Size = new Size(365, 75)
+                    Location = new Point(18, 92),
+                    Size = new Size(410, 100)
                 };
 
-                var btnDismiss = new Button
+                var btnAck = new Button
                 {
-                    Text = "Resolve / Dismiss Alert",
+                    Text = "Acknowledge",
                     Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                     BackColor = headerColor,
                     ForeColor = Color.White,
                     FlatStyle = FlatStyle.Flat,
-                    Size = new Size(160, 34),
-                    Location = new Point(18, 185),
-                    Cursor = Cursors.Hand
+                    Size = new Size(120, 34),
+                    Location = new Point(18, 205)
                 };
-                btnDismiss.FlatAppearance.BorderSize = 0;
-                btnDismiss.Click += (s, e) =>
+                btnAck.FlatAppearance.BorderSize = 0;
+                btnAck.Click += (s, e) =>
                 {
-                    HospitalData.ResolveAlert(a.Id);
+                    HospitalData.AcknowledgeAlert(a.Id);
                     dlg.DialogResult = DialogResult.OK;
-                    dlg.Close();
-                    ShowOverview();
                 };
+
+                var btnOpen = new Button
+                {
+                    Text = "Open " + (a.Module ?? "module"),
+                    Font = new Font("Segoe UI", 9F),
+                    FlatStyle = FlatStyle.Flat,
+                    Size = new Size(140, 34),
+                    Location = new Point(146, 205),
+                    Enabled = a.Module != null
+                };
+                btnOpen.Click += (s, e) => dlg.DialogResult = DialogResult.Yes;
 
                 var btnClose = new Button
                 {
@@ -632,129 +571,184 @@ namespace HospitalSystem.Forms
                     Font = new Font("Segoe UI", 9F),
                     FlatStyle = FlatStyle.Flat,
                     Size = new Size(80, 34),
-                    Location = new Point(190, 185),
-                    Cursor = Cursors.Hand
+                    Location = new Point(294, 205),
+                    DialogResult = DialogResult.Cancel
                 };
-                btnClose.Click += (s, e) => dlg.Close();
 
                 dlg.Controls.Add(pnlHeader);
                 dlg.Controls.Add(lblSev);
                 dlg.Controls.Add(lblDesc);
-                dlg.Controls.Add(btnDismiss);
+                dlg.Controls.Add(btnAck);
+                dlg.Controls.Add(btnOpen);
                 dlg.Controls.Add(btnClose);
+                dlg.CancelButton = btnClose;
 
-                dlg.ShowDialog(this);
+                var result = dlg.ShowDialog(this);
+                if (result == DialogResult.OK) ShowOverview();
+                else if (result == DialogResult.Yes) OpenModule(a.Module);
             }
         }
 
-        private void ShowNewAlertDialog()
+        // ---------- Pending admissions ----------
+        private Panel BuildPendingAdmissionsCard(System.Collections.Generic.List<Admission> pending)
         {
-            using (var dlg = new Form())
+            var card = CreateCardPanel();
+            int free = HospitalData.AvailableBeds().Count;
+            var title = MakeCardTitle("Pending Admissions (waiting for a bed)", pending.Count > 0 ? Amber : Navy);
+
+            var lv = MakeListView(("#", 30), ("Patient", 130), ("Doctor", 110), ("Waiting", 80), ("Reason", 140));
+            if (pending.Count == 0)
+                lv.Items.Add(new ListViewItem(new[] { "—", "No patients waiting", "—", "—", "—" }));
+            else
             {
-                dlg.Text = "Broadcast Emergency Alert";
-                dlg.Size = new Size(460, 360);
-                dlg.StartPosition = FormStartPosition.CenterParent;
-                dlg.FormBorderStyle = FormBorderStyle.FixedDialog;
-                dlg.MaximizeBox = false;
-                dlg.MinimizeBox = false;
-                dlg.BackColor = Color.White;
-
-                var pnlHeader = new Panel
+                int n = 1;
+                foreach (var a in pending)
                 {
-                    Dock = DockStyle.Top,
-                    Height = 50,
-                    BackColor = Color.FromArgb(185, 28, 28)
-                };
-
-                var lblTitle = new Label
-                {
-                    Text = "New Emergency Alert",
-                    Font = new Font("Segoe UI", 11F, FontStyle.Bold),
-                    ForeColor = Color.White,
-                    Location = new Point(15, 12),
-                    AutoSize = true
-                };
-                pnlHeader.Controls.Add(lblTitle);
-
-                var lblT = new Label { Text = "Alert Title / Condition:", Location = new Point(20, 65), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
-                var txtTitle = new TextBox { Location = new Point(20, 85), Size = new Size(400, 26), Font = new Font("Segoe UI", 9.5F) };
-
-                var lblS = new Label { Text = "Severity Level:", Location = new Point(20, 120), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
-                var cmbSev = new ComboBox { Location = new Point(20, 140), Size = new Size(200, 26), DropDownStyle = ComboBoxStyle.DropDownList, Font = new Font("Segoe UI", 9F) };
-                cmbSev.Items.AddRange(new object[] { "High", "Medium", "Low" });
-                cmbSev.SelectedIndex = 0;
-
-                var lblM = new Label { Text = "Message Details:", Location = new Point(20, 175), AutoSize = true, Font = new Font("Segoe UI", 9F, FontStyle.Bold) };
-                var txtMsg = new TextBox { Location = new Point(20, 195), Size = new Size(400, 55), Multiline = true, Font = new Font("Segoe UI", 9F) };
-
-                var btnPost = new Button
-                {
-                    Text = "Broadcast Alert",
-                    Font = new Font("Segoe UI", 9F, FontStyle.Bold),
-                    BackColor = Color.FromArgb(185, 28, 28),
-                    ForeColor = Color.White,
-                    FlatStyle = FlatStyle.Flat,
-                    Size = new Size(130, 34),
-                    Location = new Point(20, 265),
-                    Cursor = Cursors.Hand
-                };
-                btnPost.FlatAppearance.BorderSize = 0;
-                btnPost.Click += (s, e) =>
-                {
-                    if (string.IsNullOrWhiteSpace(txtTitle.Text))
-                    {
-                        MessageBox.Show("Please enter an alert title.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-
-                    var alert = new Alert
-                    {
-                        Title = txtTitle.Text.Trim(),
-                        Message = string.IsNullOrWhiteSpace(txtMsg.Text) ? txtTitle.Text.Trim() : txtMsg.Text.Trim(),
-                        Severity = cmbSev.SelectedItem.ToString(),
-                        CreatedOn = DateTime.Now,
-                        IsAuto = false
-                    };
-
-                    HospitalData.AddAlert(alert);
-                    dlg.DialogResult = DialogResult.OK;
-                    dlg.Close();
-                    ShowOverview();
-                };
-
-                var btnCancel = new Button
-                {
-                    Text = "Cancel",
-                    Font = new Font("Segoe UI", 9F),
-                    FlatStyle = FlatStyle.Flat,
-                    Size = new Size(80, 34),
-                    Location = new Point(160, 265),
-                    Cursor = Cursors.Hand
-                };
-                btnCancel.Click += (s, e) => dlg.Close();
-
-                dlg.Controls.Add(pnlHeader);
-                dlg.Controls.Add(lblT);
-                dlg.Controls.Add(txtTitle);
-                dlg.Controls.Add(lblS);
-                dlg.Controls.Add(cmbSev);
-                dlg.Controls.Add(lblM);
-                dlg.Controls.Add(txtMsg);
-                dlg.Controls.Add(btnPost);
-                dlg.Controls.Add(btnCancel);
-
-                dlg.ShowDialog(this);
+                    var item = new ListViewItem((n++).ToString());
+                    item.SubItems.Add(HospitalData.PatientName(a.PatientId));
+                    item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
+                    item.SubItems.Add(HospitalData.FormatDuration(a.WaitingTime));
+                    item.SubItems.Add(a.Diagnosis ?? "");
+                    if (a.WaitingTime >= AlertMonitor.LongWait)
+                        item.ForeColor = Red;
+                    lv.Items.Add(item);
+                }
             }
+            lv.DoubleClick += (s, e) => OpenModule("Admissions");
+
+            var footer = new Label
+            {
+                Dock = DockStyle.Bottom,
+                Height = 20,
+                Font = new Font("Segoe UI", 8F),
+                ForeColor = pending.Count > 0 && free > 0 ? Red : Color.Gray,
+                Text = pending.Count > 0 && free > 0
+                    ? $"{free} bed(s) free now — double-click to assign them in Admissions."
+                    : "Double-click to open Admissions."
+            };
+
+            card.Controls.Add(lv);
+            card.Controls.Add(footer);
+            card.Controls.Add(title);
+            return card;
         }
 
-        private static string GetRelativeTime(DateTime dt)
+        // ---------- Appointments ----------
+        private static System.Collections.Generic.List<Appointment> UpcomingAppointments()
         {
-            var span = DateTime.Now - dt;
-            if (span.TotalSeconds < 60) return "Just now";
-            if (span.TotalMinutes < 60) return $"{(int)span.TotalMinutes}m ago";
-            if (span.TotalHours < 24) return $"{(int)span.TotalHours}h ago";
-            if (span.TotalDays < 7) return $"{(int)span.TotalDays}d ago";
-            return dt.ToString("MMM dd");
+            return HospitalData.Appointments
+                .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != "Cancelled")
+                .OrderBy(a => a.ScheduledOn)
+                .ToList();
+        }
+
+        private Panel BuildAppointmentsCard()
+        {
+            var card = CreateCardPanel();
+            var title = MakeCardTitle("Appointments — Today & Next 7 Days", Navy);
+
+            var lv = MakeListView(("Date", 90), ("Time", 70), ("Patient", 130), ("Doctor", 120), ("Status", 80));
+            var upcoming = UpcomingAppointments();
+            if (upcoming.Count == 0)
+                lv.Items.Add(new ListViewItem(new[] { "—", "—", "No upcoming appointments", "—", "—" }));
+            else
+            {
+                var bold = new Font("Segoe UI", 9F, FontStyle.Bold);
+                foreach (var a in upcoming)
+                {
+                    bool isToday = a.ScheduledOn.Date == DateTime.Today;
+                    var item = new ListViewItem(isToday ? "Today" : a.ScheduledOn.ToString("ddd MMM dd"));
+                    item.SubItems.Add(a.ScheduledOn.ToString("hh:mm tt"));
+                    item.SubItems.Add(HospitalData.PatientName(a.PatientId));
+                    item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
+                    item.SubItems.Add(a.Status);
+                    if (isToday) item.Font = bold;
+                    if (a.IsOpen && a.ScheduledOn < DateTime.Now - AlertMonitor.AppointmentGrace)
+                        item.ForeColor = Red;   // overdue, not closed yet
+                    lv.Items.Add(item);
+                }
+            }
+            lv.DoubleClick += (s, e) => OpenModule("Appointments");
+
+            card.Controls.Add(lv);
+            card.Controls.Add(title);
+            return card;
+        }
+
+        // ---------- Bed occupancy by ward ----------
+        private Panel BuildOccupancyCard()
+        {
+            var card = CreateCardPanel();
+            var title = MakeCardTitle("Bed Occupancy by Ward", Navy);
+
+            var wards = HospitalData.Beds
+                .GroupBy(b => b.Ward ?? "(no ward)")
+                .OrderBy(g => g.Key)
+                .Select(g => new { Ward = g.Key, Total = g.Count(), Occupied = g.Count(b => b.IsOccupied) })
+                .ToList();
+            wards.Add(new { Ward = "All wards", Total = HospitalData.TotalBedsCount(), Occupied = HospitalData.OccupiedBedsCount() });
+
+            var bars = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
+            bars.Paint += (s, e) =>
+            {
+                var g = e.Graphics;
+                g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+                using (var labelFont = new Font("Segoe UI", 9F))
+                using (var boldFont = new Font("Segoe UI", 9F, FontStyle.Bold))
+                using (var track = new SolidBrush(Color.FromArgb(229, 231, 235)))
+                {
+                    int rowH = Math.Max(24, Math.Min(34, bars.Height / Math.Max(1, wards.Count)));
+                    int labelW = 90, valueW = 90;
+                    int barW = Math.Max(40, bars.Width - labelW - valueW - 10);
+
+                    for (int i = 0; i < wards.Count; i++)
+                    {
+                        var w = wards[i];
+                        bool total = i == wards.Count - 1;
+                        int y = i * rowH + 4;
+                        double r = w.Total == 0 ? 0 : (double)w.Occupied / w.Total;
+                        Color fill = r >= 1 ? Red : r >= AlertMonitor.HighOccupancyRate ? Amber : Color.FromArgb(37, 99, 235);
+
+                        g.DrawString(w.Ward, total ? boldFont : labelFont, Brushes.Black, 0, y + 2);
+                        g.FillRectangle(track, labelW, y + 4, barW, rowH - 12);
+                        using (var brush = new SolidBrush(fill))
+                            g.FillRectangle(brush, labelW, y + 4, (int)(barW * r), rowH - 12);
+                        g.DrawString($"{w.Occupied}/{w.Total} ({r:P0})", total ? boldFont : labelFont, Brushes.DimGray, labelW + barW + 6, y + 2);
+                    }
+                }
+            };
+            bars.Resize += (s, e) => bars.Invalidate();
+            bars.DoubleClick += (s, e) => OpenModule("Admissions");
+
+            card.Controls.Add(bars);
+            card.Controls.Add(title);
+            return card;
+        }
+
+        // ---------- Doctors on duty ----------
+        private Panel BuildDoctorsCard()
+        {
+            var card = CreateCardPanel();
+            var title = MakeCardTitle("Doctors on Duty", Navy);
+
+            var lv = MakeListView(("Doctor", 130), ("Specialization", 110), ("Department", 100));
+            var onDuty = HospitalData.DoctorsOnDuty();
+            if (onDuty.Count == 0)
+                lv.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—" }));
+            else
+            {
+                foreach (var d in onDuty)
+                {
+                    var item = new ListViewItem("Dr. " + d.FullName);
+                    item.SubItems.Add(d.Specialization);
+                    item.SubItems.Add(HospitalData.DepartmentName(d.DepartmentId));
+                    lv.Items.Add(item);
+                }
+            }
+
+            card.Controls.Add(lv);
+            card.Controls.Add(title);
+            return card;
         }
 
         private Panel CreateCardPanel()
@@ -768,34 +762,51 @@ namespace HospitalSystem.Forms
             return p;
         }
 
-        private Panel CreateSummaryCard(string title, string value)
+        private Panel CreateSummaryCard(string title, string value, string subtitle, Color accent)
         {
             var p = new Panel();
             p.Margin = new Padding(5);
             p.BackColor = Color.White;
-            p.Padding = new Padding(12, 10, 12, 10);
+            p.Padding = new Padding(12, 8, 12, 8);
             p.Dock = DockStyle.Fill;
             p.BorderStyle = BorderStyle.FixedSingle;
+
+            // Colour strip on the left: red/amber when the number needs attention.
+            p.Paint += (s, e) =>
+            {
+                using (var pen = new Pen(accent, 4))
+                    e.Graphics.DrawLine(pen, 1, 0, 1, p.Height);
+            };
 
             var lblTitle = new Label
             {
                 Text = title,
-                Font = new Font("Segoe UI", 10F, FontStyle.Bold),         
-                ForeColor = Color.FromArgb(55, 65, 81),                    
+                Font = new Font("Segoe UI", 9.5F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(55, 65, 81),
                 Dock = DockStyle.Top,
-                Height = 22
+                Height = 20
             };
 
             var lblValue = new Label
             {
                 Text = value,
-                Font = new Font("Segoe UI", 20F, FontStyle.Bold),           
-                ForeColor = Color.FromArgb(30, 58, 138),                   
+                Font = new Font("Segoe UI", 20F, FontStyle.Bold),
+                ForeColor = accent,
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft
             };
 
+            var lblSub = new Label
+            {
+                Text = subtitle,
+                Font = new Font("Segoe UI", 8F),
+                ForeColor = Color.Gray,
+                Dock = DockStyle.Bottom,
+                Height = 18
+            };
+
             p.Controls.Add(lblValue);
+            p.Controls.Add(lblSub);
             p.Controls.Add(lblTitle);
             return p;
         }
@@ -815,7 +826,7 @@ namespace HospitalSystem.Forms
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 Dock = DockStyle.Top,
                 Height = 22,
-                ForeColor = Color.FromArgb(30, 58, 138)
+                ForeColor = Navy
             };
             p.Controls.Add(lbl);
 
@@ -839,28 +850,31 @@ namespace HospitalSystem.Forms
                 int barWidth = Math.Max(10, (chartArea.Width - totalGap) / barCount);
                 int maxBarHeight = chartArea.Height - 28;
 
-                for (int i = 0; i < barCount; i++)
+                using (var valueFont = new Font("Segoe UI", 7.5F))
+                using (var labelFont = new Font("Segoe UI", 7F))
+                using (var brush = new SolidBrush(Color.FromArgb(37, 99, 235)))
                 {
-                    int h = (int)(data[i].Value / (float)max * maxBarHeight);
-                    int x = gap + i * (barWidth + gap);
-                    int y = chartArea.Height - h - 16;
+                    for (int i = 0; i < barCount; i++)
+                    {
+                        int h = (int)(data[i].Value / (float)max * maxBarHeight);
+                        int x = gap + i * (barWidth + gap);
+                        int y = chartArea.Height - h - 16;
 
-                    using (var brush = new SolidBrush(Color.FromArgb(37, 99, 235)))
                         g.FillRectangle(brush, x, y, barWidth, h);
 
-                    string val = data[i].Value.ToString();
-                    var sz = g.MeasureString(val, new Font("Segoe UI", 7.5F));
-                    g.DrawString(val, new Font("Segoe UI", 7.5F), Brushes.DimGray,
-                        x + (barWidth - sz.Width) / 2, y - 14);
+                        string val = data[i].Value.ToString();
+                        var sz = g.MeasureString(val, valueFont);
+                        g.DrawString(val, valueFont, Brushes.DimGray, x + (barWidth - sz.Width) / 2, y - 14);
 
-                    string lab = data[i].Label;
-                    var sz2 = g.MeasureString(lab, new Font("Segoe UI", 7F));
-                    g.DrawString(lab, new Font("Segoe UI", 7F), Brushes.Gray,
-                        x + (barWidth - sz2.Width) / 2, chartArea.Height - 14);
+                        string lab = data[i].Label;
+                        var sz2 = g.MeasureString(lab, labelFont);
+                        g.DrawString(lab, labelFont, Brushes.Gray, x + (barWidth - sz2.Width) / 2, chartArea.Height - 14);
+                    }
                 }
             };
 
             p.Controls.Add(chartArea);
+            chartArea.BringToFront();
             return p;
         }
 
@@ -882,7 +896,7 @@ namespace HospitalSystem.Forms
             for (int i = 5; i >= 0; i--)
             {
                 var month = DateTime.Today.AddMonths(-i);
-                int count = HospitalData.Admissions.Count(a =>
+                int count = HospitalData.Admissions.Count(a => !a.IsPending && a.Status != "Cancelled" &&
                     a.AdmittedOn.Year == month.Year && a.AdmittedOn.Month == month.Month);
                 result[5 - i] = (month.ToString("MMM"), count);
             }
@@ -925,13 +939,13 @@ namespace HospitalSystem.Forms
             if (MessageBox.Show("Are you sure you want to sign out?", "Sign Out",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.CurrentUser = null;
+                HospitalData.SignOut();   // logs the sign-out
                 this.Hide();
                 using (var login = new LoginForm())
                 {
                     if (login.ShowDialog() == DialogResult.OK)
                     {
-                        UpdateUserLabel();
+                        ApplyUserAccess();
                         ShowOverview();
                         this.Show();
                     }
