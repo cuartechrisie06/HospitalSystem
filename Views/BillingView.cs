@@ -33,6 +33,17 @@ namespace HospitalSystem.Views
         private Button btnPay;
         private DataGridView gridPayments;
 
+        private TabControl tabsSummary;
+        private DataGridView gridBreakdown;
+        private Button btnPrintStatement;
+        private readonly Font breakdownBold = new Font("Segoe UI", 9F, FontStyle.Bold);
+
+        private NumericUpDown numDiscount, numVatRate, numHmoCoverage;
+        private ComboBox cmbDiscountType, cmbEligibility, cmbHmoProvider;
+        private TextBox txtDiscountReason, txtEligibilityId, txtHmoLoa;
+        private Label lblEligibilityHint;
+        private Button btnApplyAdjustments;
+
         private bool loading;
 
         public BillingView()
@@ -178,7 +189,164 @@ namespace HospitalSystem.Views
             detail.BringToFront();
 
             detail.Controls.Add(BuildItemsPanel(), 0, 0);
-            detail.Controls.Add(BuildPaymentsPanel(), 1, 0);
+            detail.Controls.Add(BuildSummaryTabs(), 1, 0);
+        }
+
+        // Right-hand side: breakdown of the selected bill, its adjustments, and payments.
+        private Control BuildSummaryTabs()
+        {
+            tabsSummary = new TabControl();
+            tabsSummary.Dock = DockStyle.Fill;
+            tabsSummary.Margin = new Padding(5, 0, 0, 0);
+
+            TabPage breakdownPage = new TabPage("Breakdown");
+            breakdownPage.Controls.Add(BuildBreakdownPanel());
+            tabsSummary.TabPages.Add(breakdownPage);
+
+            TabPage adjustmentsPage = new TabPage("Discounts / Tax / HMO");
+            adjustmentsPage.Controls.Add(BuildAdjustmentsPanel());
+            tabsSummary.TabPages.Add(adjustmentsPage);
+
+            TabPage paymentsPage = new TabPage("Payments");
+            Panel payments = BuildPaymentsPanel();
+            payments.Margin = new Padding(0);
+            paymentsPage.Controls.Add(payments);
+            tabsSummary.TabPages.Add(paymentsPage);
+
+            return tabsSummary;
+        }
+
+        private Panel BuildBreakdownPanel()
+        {
+            Panel panel = MakeCard(new Padding(0));
+            panel.Dock = DockStyle.Fill;
+
+            Panel bottom = new Panel();
+            bottom.Dock = DockStyle.Bottom;
+            bottom.Height = 40;
+            panel.Controls.Add(bottom);
+
+            btnPrintStatement = new Button();
+            btnPrintStatement.Text = "Print Statement...";
+            btnPrintStatement.Location = new Point(0, 6);
+            btnPrintStatement.Size = new Size(140, 30);
+            btnPrintStatement.Click += BtnPrintStatement_Click;
+            bottom.Controls.Add(btnPrintStatement);
+
+            gridBreakdown = MakeGrid();
+            gridBreakdown.Dock = DockStyle.Fill;
+            gridBreakdown.ColumnHeadersVisible = false;
+            gridBreakdown.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.None;
+            gridBreakdown.CellBorderStyle = DataGridViewCellBorderStyle.None;
+            gridBreakdown.DefaultCellStyle.SelectionBackColor = Color.White;
+            gridBreakdown.DefaultCellStyle.SelectionForeColor = Color.Black;
+            var colLabel = new DataGridViewTextBoxColumn { Name = "Label", AutoSizeMode = DataGridViewAutoSizeColumnMode.Fill };
+            colLabel.DefaultCellStyle.WrapMode = DataGridViewTriState.True;
+            var colAmount = new DataGridViewTextBoxColumn { Name = "Amount", Width = 110 };
+            colAmount.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            gridBreakdown.Columns.Add(colLabel);
+            gridBreakdown.Columns.Add(colAmount);
+            gridBreakdown.AutoSizeRowsMode = DataGridViewAutoSizeRowsMode.AllCells;
+            panel.Controls.Add(gridBreakdown);
+            gridBreakdown.BringToFront();
+
+            return panel;
+        }
+
+        private Panel BuildAdjustmentsPanel()
+        {
+            Panel panel = MakeCard(new Padding(0));
+            panel.Dock = DockStyle.Fill;
+            panel.AutoScroll = true;
+
+            // Discount
+            panel.Controls.Add(MakeLabel("Discount", 5, 5));
+            numDiscount = new NumericUpDown();
+            numDiscount.Location = new Point(5, 23);
+            numDiscount.Size = new Size(85, 28);
+            numDiscount.DecimalPlaces = 2;
+            numDiscount.Maximum = 10000000;
+            numDiscount.ThousandsSeparator = true;
+            panel.Controls.Add(numDiscount);
+
+            cmbDiscountType = new ComboBox();
+            cmbDiscountType.Location = new Point(95, 23);
+            cmbDiscountType.Size = new Size(55, 28);
+            cmbDiscountType.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbDiscountType.Items.AddRange(new object[] { "%", "PHP" });
+            cmbDiscountType.SelectedIndex = 0;
+            panel.Controls.Add(cmbDiscountType);
+
+            panel.Controls.Add(MakeLabel("Reason (e.g. employee, promo, charity)", 160, 5));
+            txtDiscountReason = new TextBox();
+            txtDiscountReason.Location = new Point(160, 23);
+            txtDiscountReason.Size = new Size(230, 28);
+            panel.Controls.Add(txtDiscountReason);
+
+            // Senior citizen / PWD
+            panel.Controls.Add(MakeLabel("Senior citizen / PWD (20%, VAT-exempt)", 5, 58));
+            cmbEligibility = new ComboBox();
+            cmbEligibility.Location = new Point(5, 76);
+            cmbEligibility.Size = new Size(145, 28);
+            cmbEligibility.DropDownStyle = ComboBoxStyle.DropDownList;
+            cmbEligibility.DataSource = Enum.GetValues(typeof(DiscountEligibility));
+            panel.Controls.Add(cmbEligibility);
+
+            panel.Controls.Add(MakeLabel("OSCA / PWD ID No.", 160, 58));
+            txtEligibilityId = new TextBox();
+            txtEligibilityId.Location = new Point(160, 76);
+            txtEligibilityId.Size = new Size(230, 28);
+            panel.Controls.Add(txtEligibilityId);
+
+            lblEligibilityHint = MakeLabel("", 5, 104);
+            lblEligibilityHint.ForeColor = Color.FromArgb(180, 83, 9);
+            panel.Controls.Add(lblEligibilityHint);
+
+            // VAT
+            panel.Controls.Add(MakeLabel("VAT rate (%)", 5, 126));
+            numVatRate = new NumericUpDown();
+            numVatRate.Location = new Point(5, 144);
+            numVatRate.Size = new Size(85, 28);
+            numVatRate.DecimalPlaces = 2;
+            numVatRate.Maximum = 100;
+            panel.Controls.Add(numVatRate);
+            panel.Controls.Add(MakeLabel("Waived automatically for senior citizens / PWD.", 95, 147));
+
+            // HMO
+            panel.Controls.Add(MakeLabel("HMO provider", 5, 179));
+            cmbHmoProvider = new ComboBox();
+            cmbHmoProvider.Location = new Point(5, 197);
+            cmbHmoProvider.Size = new Size(145, 28);
+            cmbHmoProvider.DropDownStyle = ComboBoxStyle.DropDown;   // pick a common one or type another
+            cmbHmoProvider.Items.AddRange(new object[] { "Maxicare", "Intellicare", "MediCard", "PhilCare", "Cocolife", "ValuCare", "Etiqa" });
+            panel.Controls.Add(cmbHmoProvider);
+
+            panel.Controls.Add(MakeLabel("LOA / Approval No.", 160, 179));
+            txtHmoLoa = new TextBox();
+            txtHmoLoa.Location = new Point(160, 197);
+            txtHmoLoa.Size = new Size(120, 28);
+            panel.Controls.Add(txtHmoLoa);
+
+            panel.Controls.Add(MakeLabel("Coverage amount", 290, 179));
+            numHmoCoverage = new NumericUpDown();
+            numHmoCoverage.Location = new Point(290, 197);
+            numHmoCoverage.Size = new Size(100, 28);
+            numHmoCoverage.DecimalPlaces = 2;
+            numHmoCoverage.Maximum = 10000000;
+            numHmoCoverage.ThousandsSeparator = true;
+            panel.Controls.Add(numHmoCoverage);
+
+            btnApplyAdjustments = new Button();
+            btnApplyAdjustments.Text = "Apply Adjustments";
+            btnApplyAdjustments.Location = new Point(5, 240);
+            btnApplyAdjustments.Size = new Size(150, 30);
+            btnApplyAdjustments.BackColor = Color.FromArgb(37, 99, 235);
+            btnApplyAdjustments.ForeColor = Color.White;
+            btnApplyAdjustments.FlatStyle = FlatStyle.Flat;
+            btnApplyAdjustments.Click += BtnApplyAdjustments_Click;
+            panel.Controls.Add(btnApplyAdjustments);
+
+            return panel;
         }
 
         private Panel BuildItemsPanel()
@@ -401,7 +569,8 @@ namespace HospitalSystem.Views
                         : b.AppointmentId.HasValue ? "A-" + b.AppointmentId.Value.ToString("D4")
                         : "-",
                     Date = b.BillDate.ToString("yyyy-MM-dd"),
-                    Total = Money(b.TotalAmount),
+                    Gross = Money(b.Subtotal),
+                    Due = Money(b.TotalAmount),
                     Paid = Money(b.AmountPaid),
                     Balance = Money(b.Balance),
                     Status = b.Status.ToString(),
@@ -440,11 +609,15 @@ namespace HospitalSystem.Views
         {
             var bill = GetSelectedBill();
 
-            gridItems.DataSource = bill == null ? null : bill.Items.Select(i => new
+            // Itemized charges, grouped by category (room, medicine, laboratory, procedures...).
+            gridItems.DataSource = bill == null ? null : bill.Items
+                .OrderBy(i => i.Category)
+                .ThenBy(i => i.Id)
+                .Select(i => new
             {
                 i.Id,
                 i.Description,
-                Category = i.Category.ToString(),
+                Category = Bill.CategoryLabel(i.Category),
                 Qty = i.Quantity,
                 UnitPrice = Money(i.UnitPrice),
                 Amount = Money(i.Amount)
@@ -465,7 +638,7 @@ namespace HospitalSystem.Views
 
             lblItems.Text = bill == null
                 ? "Bill Items (select a bill)"
-                : "Bill Items - " + bill.BillNo + "    Total: " + Money(bill.TotalAmount);
+                : "Bill Items - " + bill.BillNo + "    Gross: " + Money(bill.Subtotal) + "    Due: " + Money(bill.TotalAmount);
             lblPayments.Text = bill == null
                 ? "Payments"
                 : "Payments    Paid: " + Money(bill.AmountPaid) + "    Balance: " + Money(bill.Balance);
@@ -478,9 +651,97 @@ namespace HospitalSystem.Views
             btnRemoveItem.Enabled = editable;
             btnPay.Enabled = editable && bill.Balance > 0;
             btnCancelBill.Enabled = editable;
+            btnApplyAdjustments.Enabled = editable;
+            btnPrintStatement.Enabled = bill != null;
+
+            LoadBreakdown(bill);
+            LoadAdjustments(bill);
+        }
+
+        private void LoadBreakdown(Bill bill)
+        {
+            gridBreakdown.Rows.Clear();
+            if (bill == null) return;
+
+            foreach (var line in bill.GetBreakdown())
+            {
+                int i = gridBreakdown.Rows.Add(line.Label, FormatAmount(line.Amount));
+                var row = gridBreakdown.Rows[i];
+                if (line.Kind != BreakdownLineKind.Line)
+                    row.DefaultCellStyle.Font = breakdownBold;
+                if (line.Kind == BreakdownLineKind.Total)
+                    row.DefaultCellStyle.BackColor = row.DefaultCellStyle.SelectionBackColor = Color.FromArgb(239, 246, 255);
+                else if (line.Kind == BreakdownLineKind.Subtotal)
+                    row.DefaultCellStyle.BackColor = row.DefaultCellStyle.SelectionBackColor = Color.FromArgb(249, 250, 251);
+            }
+            gridBreakdown.ClearSelection();
+        }
+
+        // Deductions in parentheses, accounting style.
+        private static string FormatAmount(decimal value) =>
+            value < 0 ? "(" + Money(-value) + ")" : Money(value);
+
+        private void LoadAdjustments(Bill bill)
+        {
+            var adj = bill != null ? bill.Adjustments : new BillAdjustments { VatRate = HospitalData.DefaultVatRate };
+
+            numDiscount.Value = Math.Min(adj.DiscountValue, numDiscount.Maximum);
+            cmbDiscountType.SelectedIndex = adj.DiscountIsPercent ? 0 : 1;
+            txtDiscountReason.Text = adj.DiscountReason ?? "";
+            cmbEligibility.SelectedItem = adj.Eligibility;
+            txtEligibilityId.Text = adj.EligibilityIdNo ?? "";
+            numVatRate.Value = Math.Min(adj.VatRate, numVatRate.Maximum);
+            cmbHmoProvider.Text = adj.HmoProvider ?? "";
+            txtHmoLoa.Text = adj.HmoLoaNo ?? "";
+            numHmoCoverage.Value = Math.Min(adj.HmoCoverage, numHmoCoverage.Maximum);
+
+            // Nudge staff when the patient's age qualifies them but no discount is applied yet.
+            var patient = bill != null ? HospitalData.GetPatient(bill.PatientId) : null;
+            lblEligibilityHint.Text = patient != null && patient.Age >= 60 && adj.Eligibility == DiscountEligibility.None
+                ? "Patient is " + patient.Age + ": eligible for the senior citizen discount (ask for the OSCA ID)."
+                : "";
         }
 
         // -------------------- Actions --------------------
+        private void BtnApplyAdjustments_Click(object sender, EventArgs e)
+        {
+            var bill = GetSelectedBill();
+            if (bill == null) return;
+
+            var adj = new BillAdjustments
+            {
+                DiscountValue = numDiscount.Value,
+                DiscountIsPercent = cmbDiscountType.SelectedIndex == 0,
+                DiscountReason = txtDiscountReason.Text.Trim(),
+                Eligibility = (DiscountEligibility)cmbEligibility.SelectedItem,
+                EligibilityIdNo = txtEligibilityId.Text.Trim(),
+                VatRate = numVatRate.Value,
+                HmoProvider = cmbHmoProvider.Text.Trim(),
+                HmoLoaNo = txtHmoLoa.Text.Trim(),
+                HmoCoverage = numHmoCoverage.Value
+            };
+
+            try
+            {
+                HospitalData.UpdateBillAdjustments(bill, adj);
+                LoadBills(bill.Id);
+                tabsSummary.SelectedIndex = 0;   // show the updated breakdown
+            }
+            catch (InvalidOperationException ex)
+            {
+                MessageBox.Show(ex.Message, "Cannot Apply Adjustments", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+        }
+
+        private void BtnPrintStatement_Click(object sender, EventArgs e)
+        {
+            var bill = GetSelectedBill();
+            if (bill == null) return;
+
+            using (var printer = new BillStatementPrinter(bill))
+                printer.ShowPreview(FindForm());
+        }
+
         private void BtnCreate_Click(object sender, EventArgs e)
         {
             var patient = cmbPatient.SelectedItem as Patient;

@@ -6,6 +6,7 @@ namespace HospitalSystem.Models
         Consultation,
         Procedure,
         Medicine,
+        Laboratory,
         Other
     }
 }

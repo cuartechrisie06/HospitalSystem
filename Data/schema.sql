@@ -104,13 +104,28 @@ CREATE TABLE IF NOT EXISTS bills (
     admission_id    INT NULL,
     appointment_id  INT NULL,
     bill_date       DATETIME NOT NULL,
-    total_amount    DECIMAL(12,2) NOT NULL DEFAULT 0,
+    total_amount    DECIMAL(12,2) NOT NULL DEFAULT 0,   -- amount due from the patient
     amount_paid     DECIMAL(12,2) NOT NULL DEFAULT 0,
     balance         DECIMAL(12,2) NOT NULL DEFAULT 0,
     status          VARCHAR(20) NOT NULL DEFAULT 'Unpaid',
     notes           VARCHAR(500),
     created_by      VARCHAR(50),
     created_at      DATETIME NOT NULL,
+    -- Breakdown: subtotal - discount - senior/PWD discount + VAT = net; net - HMO = total_amount
+    subtotal            DECIMAL(12,2) NOT NULL DEFAULT 0,
+    discount_value      DECIMAL(12,2) NOT NULL DEFAULT 0,   -- percent or peso amount
+    discount_is_percent TINYINT(1) NOT NULL DEFAULT 1,
+    discount_reason     VARCHAR(255),
+    discount_amount     DECIMAL(12,2) NOT NULL DEFAULT 0,
+    eligibility         VARCHAR(20) NOT NULL DEFAULT 'None', -- None / SeniorCitizen / PWD
+    eligibility_id_no   VARCHAR(50),
+    statutory_discount  DECIMAL(12,2) NOT NULL DEFAULT 0,
+    vat_rate            DECIMAL(5,2) NOT NULL DEFAULT 0,
+    vat_amount          DECIMAL(12,2) NOT NULL DEFAULT 0,
+    hmo_provider        VARCHAR(100),
+    hmo_loa_no          VARCHAR(50),
+    hmo_coverage        DECIMAL(12,2) NOT NULL DEFAULT 0,   -- approved by the HMO
+    hmo_amount          DECIMAL(12,2) NOT NULL DEFAULT 0,   -- applied to this bill
     FOREIGN KEY (patient_id) REFERENCES patients(id),
     FOREIGN KEY (admission_id) REFERENCES admissions(id),
     FOREIGN KEY (appointment_id) REFERENCES appointments(id)
@@ -203,7 +218,7 @@ INSERT INTO charge_schedules (id, description, category, unit_price, ward, per_d
     (4, 'Room charge - ICU',                        'Room',      8000.00, 'ICU',          1, 1),
     (5, 'Nursing care',                             'Other',     350.00,  NULL,           1, 1),
     (6, 'ICU monitoring',                           'Procedure', 2000.00, 'ICU',          1, 1),
-    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Procedure', 750.00,  NULL,           0, 1)
+    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1)
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 INSERT INTO alerts (id, title, message, severity, created_on) VALUES

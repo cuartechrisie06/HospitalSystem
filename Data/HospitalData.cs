@@ -311,6 +311,45 @@ namespace HospitalSystem.Data
                 }
             }
 
+            // Breakdown/adjustment columns added after bills existed. Upgrading an older database
+            // in place (same approach as EnsureDoctorColumns); schema.sql creates them directly.
+            var billColumns = new[]
+            {
+                new { Name = "subtotal", Ddl = "subtotal DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "discount_value", Ddl = "discount_value DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "discount_is_percent", Ddl = "discount_is_percent TINYINT(1) NOT NULL DEFAULT 1" },
+                new { Name = "discount_reason", Ddl = "discount_reason VARCHAR(255)" },
+                new { Name = "discount_amount", Ddl = "discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "eligibility", Ddl = "eligibility VARCHAR(20) NOT NULL DEFAULT 'None'" },
+                new { Name = "eligibility_id_no", Ddl = "eligibility_id_no VARCHAR(50)" },
+                new { Name = "statutory_discount", Ddl = "statutory_discount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                // Existing bills keep 0% so their totals don't change; new bills start at DefaultVatRate.
+                new { Name = "vat_rate", Ddl = "vat_rate DECIMAL(5,2) NOT NULL DEFAULT 0" },
+                new { Name = "vat_amount", Ddl = "vat_amount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "hmo_provider", Ddl = "hmo_provider VARCHAR(100)" },
+                new { Name = "hmo_loa_no", Ddl = "hmo_loa_no VARCHAR(50)" },
+                new { Name = "hmo_coverage", Ddl = "hmo_coverage DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "hmo_amount", Ddl = "hmo_amount DECIMAL(12,2) NOT NULL DEFAULT 0" }
+            };
+
+            foreach (var col in billColumns)
+            {
+                bool exists;
+                using (var cmd = new MySqlCommand(
+                    "SELECT COUNT(*) FROM information_schema.columns " +
+                    "WHERE table_schema = DATABASE() AND table_name = 'bills' AND column_name = @col", conn))
+                {
+                    cmd.Parameters.AddWithValue("@col", col.Name);
+                    exists = Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+                }
+
+                if (!exists)
+                {
+                    using (var cmd = new MySqlCommand("ALTER TABLE bills ADD COLUMN " + col.Ddl, conn))
+                        cmd.ExecuteNonQuery();
+                }
+            }
+
             // Default admission charges, same as the seed in schema.sql.
             using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM charge_schedules", conn))
             {
@@ -324,7 +363,7 @@ namespace HospitalSystem.Data
                         "('Room charge - ICU', 'Room', 8000.00, 'ICU', 1, 1)," +
                         "('Nursing care', 'Other', 350.00, NULL, 1, 1)," +
                         "('ICU monitoring', 'Procedure', 2000.00, 'ICU', 1, 1)," +
-                        "('Basic laboratory panel (CBC, urinalysis)', 'Procedure', 750.00, NULL, 0, 1)", conn))
+                        "('Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL, 0, 1)", conn))
                         seed.ExecuteNonQuery();
                 }
             }
@@ -363,13 +402,18 @@ namespace HospitalSystem.Data
             var list = new List<Bill>();
             using (var cmd = new MySqlCommand(
                 "SELECT id, patient_id, admission_id, appointment_id, bill_date, total_amount, amount_paid, " +
-                "balance, status, notes, created_by, created_at FROM bills", conn))
+                "balance, status, notes, created_by, created_at, discount_value, discount_is_percent, discount_reason, " +
+                "eligibility, eligibility_id_no, vat_rate, hmo_provider, hmo_loa_no, hmo_coverage FROM bills", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
                 {
                     BillStatus status;
                     Enum.TryParse(r.GetString("status"), out status);
+
+                    DiscountEligibility eligibility;
+                    if (!Enum.TryParse(r.GetString("eligibility"), out eligibility))
+                        eligibility = DiscountEligibility.None;
 
                     list.Add(new Bill
                     {
@@ -384,7 +428,19 @@ namespace HospitalSystem.Data
                         Status = status,
                         Notes = r.IsDBNull(r.GetOrdinal("notes")) ? null : r.GetString("notes"),
                         CreatedBy = r.IsDBNull(r.GetOrdinal("created_by")) ? null : r.GetString("created_by"),
-                        CreatedAt = r.GetDateTime("created_at")
+                        CreatedAt = r.GetDateTime("created_at"),
+                        Adjustments = new BillAdjustments
+                        {
+                            DiscountValue = r.GetDecimal("discount_value"),
+                            DiscountIsPercent = r.GetBoolean("discount_is_percent"),
+                            DiscountReason = r.IsDBNull(r.GetOrdinal("discount_reason")) ? null : r.GetString("discount_reason"),
+                            Eligibility = eligibility,
+                            EligibilityIdNo = r.IsDBNull(r.GetOrdinal("eligibility_id_no")) ? null : r.GetString("eligibility_id_no"),
+                            VatRate = r.GetDecimal("vat_rate"),
+                            HmoProvider = r.IsDBNull(r.GetOrdinal("hmo_provider")) ? null : r.GetString("hmo_provider"),
+                            HmoLoaNo = r.IsDBNull(r.GetOrdinal("hmo_loa_no")) ? null : r.GetString("hmo_loa_no"),
+                            HmoCoverage = r.GetDecimal("hmo_coverage")
+                        }
                     });
                 }
             }
@@ -441,6 +497,13 @@ namespace HospitalSystem.Data
                         ReceivedBy = r.IsDBNull(r.GetOrdinal("received_by")) ? null : r.GetString("received_by")
                     });
                 }
+            }
+
+            // Rebuild the breakdown (subtotal, discounts, VAT, HMO) from the items and adjustments.
+            foreach (var bill in list)
+            {
+                bill.CalculateTotal();
+                bill.CalculateBalance();
             }
 
             return list;
@@ -925,6 +988,9 @@ namespace HospitalSystem.Data
         // -------------------- Billing --------------------
         public const decimal ConsultationFee = 500m;
 
+        // Standard VAT rate (%) applied to new bills; each bill can override it under Adjustments.
+        public const decimal DefaultVatRate = 12m;
+
         public static Bill GetBill(int id) => Bills.FirstOrDefault(b => b.Id == id);
 
         public static Bill OpenBillForAdmission(int admissionId) =>
@@ -980,8 +1046,13 @@ namespace HospitalSystem.Data
             b.CreatedAt = DateTime.Now;
             b.CreatedBy = CurrentUser != null ? CurrentUser.Username : null;
             b.Status = BillStatus.Unpaid;
+            // New bills start at the standard VAT rate; it can be changed per bill under Adjustments.
+            if (b.Adjustments.VatRate == 0)
+                b.Adjustments.VatRate = DefaultVatRate;
             foreach (var item in items)
                 b.AddItem(item);
+            b.CalculateTotal();
+            b.CalculateBalance();
 
             using (var conn = Db.OpenConnection())
             using (var tx = conn.BeginTransaction())
@@ -1012,6 +1083,7 @@ namespace HospitalSystem.Data
                     InsertBillItem(item, conn, tx);
                 }
 
+                SaveBillTotals(b, conn, tx);   // breakdown and adjustment columns
                 tx.Commit();
             }
 
@@ -1197,19 +1269,60 @@ namespace HospitalSystem.Data
             }
         }
 
+        // Replaces a bill's discount, senior citizen/PWD discount, VAT rate and HMO coverage.
+        public static void UpdateBillAdjustments(Bill b, BillAdjustments adj)
+        {
+            b.ApplyAdjustments(adj);
+
+            using (var conn = Db.OpenConnection())
+            using (var tx = conn.BeginTransaction())
+            {
+                SaveBillTotals(b, conn, tx);
+                tx.Commit();
+            }
+
+            LogActivity("Billing", "Adjusted",
+                $"Adjusted {b.BillNo}: discounts {(b.DiscountAmount + b.StatutoryDiscountAmount):N2}, VAT {b.VatAmount:N2}, " +
+                $"HMO {b.HmoAmount:N2}, amount due {b.TotalAmount:N2}", "🧾");
+        }
+
+        // Saves the totals, the full breakdown and the adjustment inputs.
         private static void SaveBillTotals(Bill b, MySqlConnection conn, MySqlTransaction tx)
         {
+            var adj = b.Adjustments;
             using (var cmd = new MySqlCommand(
-                "UPDATE bills SET total_amount=@total, amount_paid=@paid, balance=@balance, status=@status WHERE id=@id", conn, tx))
+                "UPDATE bills SET total_amount=@total, amount_paid=@paid, balance=@balance, status=@status, " +
+                "subtotal=@subtotal, discount_value=@discountValue, discount_is_percent=@discountIsPercent, " +
+                "discount_reason=@discountReason, discount_amount=@discountAmount, eligibility=@eligibility, " +
+                "eligibility_id_no=@eligibilityIdNo, statutory_discount=@statutoryDiscount, vat_rate=@vatRate, " +
+                "vat_amount=@vatAmount, hmo_provider=@hmoProvider, hmo_loa_no=@hmoLoaNo, hmo_coverage=@hmoCoverage, " +
+                "hmo_amount=@hmoAmount WHERE id=@id", conn, tx))
             {
                 cmd.Parameters.AddWithValue("@total", b.TotalAmount);
                 cmd.Parameters.AddWithValue("@paid", b.AmountPaid);
                 cmd.Parameters.AddWithValue("@balance", b.Balance);
                 cmd.Parameters.AddWithValue("@status", b.Status.ToString());
+                cmd.Parameters.AddWithValue("@subtotal", b.Subtotal);
+                cmd.Parameters.AddWithValue("@discountValue", adj.DiscountValue);
+                cmd.Parameters.AddWithValue("@discountIsPercent", adj.DiscountIsPercent);
+                cmd.Parameters.AddWithValue("@discountReason", NullIfBlank(adj.DiscountReason));
+                cmd.Parameters.AddWithValue("@discountAmount", b.DiscountAmount);
+                cmd.Parameters.AddWithValue("@eligibility", adj.Eligibility.ToString());
+                cmd.Parameters.AddWithValue("@eligibilityIdNo", NullIfBlank(adj.EligibilityIdNo));
+                cmd.Parameters.AddWithValue("@statutoryDiscount", b.StatutoryDiscountAmount);
+                cmd.Parameters.AddWithValue("@vatRate", adj.VatRate);
+                cmd.Parameters.AddWithValue("@vatAmount", b.VatAmount);
+                cmd.Parameters.AddWithValue("@hmoProvider", NullIfBlank(adj.HmoProvider));
+                cmd.Parameters.AddWithValue("@hmoLoaNo", NullIfBlank(adj.HmoLoaNo));
+                cmd.Parameters.AddWithValue("@hmoCoverage", adj.HmoCoverage);
+                cmd.Parameters.AddWithValue("@hmoAmount", b.HmoAmount);
                 cmd.Parameters.AddWithValue("@id", b.Id);
                 cmd.ExecuteNonQuery();
             }
         }
+
+        private static object NullIfBlank(string s) =>
+            string.IsNullOrWhiteSpace(s) ? (object)DBNull.Value : s.Trim();
 
         // -------------------- Charge Schedule --------------------
         public static List<string> Wards() =>
