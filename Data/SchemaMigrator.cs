@@ -1,0 +1,205 @@
+using System;
+using MySql.Data.MySqlClient;
+using HospitalSystem.Models;
+
+namespace HospitalSystem.Data
+{
+    // Upgrades an older database in place so it matches Data/schema.sql (keep the two in sync).
+    // Runs once at startup, before anything is loaded. Works on both MySQL and MariaDB
+    // (no "ADD COLUMN IF NOT EXISTS").
+    public class SchemaMigrator
+    {
+        private readonly IDbConnectionFactory db;
+
+        public SchemaMigrator(IDbConnectionFactory db)
+        {
+            this.db = db;
+        }
+
+        // Returns how many old manually posted alerts were closed, so the caller can log it.
+        public int Migrate()
+        {
+            using (var conn = db.OpenConnection())
+            {
+                EnsureDoctorColumns(conn);
+                int retired = EnsureWorkflowColumns(conn);
+                EnsureBillingTables(conn);
+                return retired;
+            }
+        }
+
+        // Adding the columns here means a database imported before the doctor record
+        // fields existed picks them up without a re-import.
+        private static void EnsureDoctorColumns(MySqlConnection conn)
+        {
+            AddColumnIfMissing(conn, "doctors", "license_number", "license_number VARCHAR(50)");
+            AddColumnIfMissing(conn, "doctors", "credentials", "credentials VARCHAR(255)");
+            AddColumnIfMissing(conn, "doctors", "deactivation_reason", "deactivation_reason VARCHAR(255)");
+        }
+
+        // The waiting list (admissions without a bed), alert triggers and the activity log's user.
+        private static int EnsureWorkflowColumns(MySqlConnection conn)
+        {
+            AddColumnIfMissing(conn, "admissions", "requested_on", "requested_on DATETIME NULL");
+            using (var cmd = new MySqlCommand(
+                "SELECT IS_NULLABLE FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = 'admissions' AND column_name = 'bed_id'", conn))
+            {
+                if ((cmd.ExecuteScalar() as string) == "NO")
+                {
+                    using (var alter = new MySqlCommand("ALTER TABLE admissions MODIFY bed_id INT NULL", conn))
+                        alter.ExecuteNonQuery();
+                }
+            }
+
+            AddColumnIfMissing(conn, "alerts", "source_key", "source_key VARCHAR(100) NULL");
+            AddColumnIfMissing(conn, "alerts", "module", "module VARCHAR(50) NULL");
+            AddColumnIfMissing(conn, "alerts", "acknowledged_by", "acknowledged_by VARCHAR(100) NULL");
+            AddColumnIfMissing(conn, "alerts", "resolved_on", "resolved_on DATETIME NULL");
+
+            // Alerts are no longer posted by hand. Close any still open from before (they have no
+            // trigger, so nothing would ever clear them); the rows stay in the table as history.
+            int retired;
+            using (var cmd = new MySqlCommand(
+                "UPDATE alerts SET status='Resolved', resolved_on=NOW(), acknowledged_by=@by " +
+                "WHERE source_key IS NULL AND status IN ('Active', 'Acknowledged')", conn))
+            {
+                cmd.Parameters.AddWithValue("@by", ActivityItem.SystemUser);
+                retired = cmd.ExecuteNonQuery();
+            }
+
+            AddColumnIfMissing(conn, "activity_log", "username", "username VARCHAR(50) NULL");
+            return retired;
+        }
+
+        // Creating them here means a database imported before billing existed picks the tables up without a re-import.
+        private static void EnsureBillingTables(MySqlConnection conn)
+        {
+            string[] ddl =
+            {
+                "CREATE TABLE IF NOT EXISTS bills (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  patient_id INT NOT NULL," +
+                "  admission_id INT NULL," +
+                "  appointment_id INT NULL," +
+                "  bill_date DATETIME NOT NULL," +
+                "  total_amount DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  amount_paid DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  balance DECIMAL(12,2) NOT NULL DEFAULT 0," +
+                "  status VARCHAR(20) NOT NULL DEFAULT 'Unpaid'," +
+                "  notes VARCHAR(500)," +
+                "  created_by VARCHAR(50)," +
+                "  created_at DATETIME NOT NULL," +
+                "  FOREIGN KEY (patient_id) REFERENCES patients(id)," +
+                "  FOREIGN KEY (admission_id) REFERENCES admissions(id)," +
+                "  FOREIGN KEY (appointment_id) REFERENCES appointments(id))",
+
+                "CREATE TABLE IF NOT EXISTS bill_items (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  bill_id INT NOT NULL," +
+                "  description VARCHAR(255) NOT NULL," +
+                "  category VARCHAR(20) NOT NULL," +
+                "  quantity INT NOT NULL DEFAULT 1," +
+                "  unit_price DECIMAL(12,2) NOT NULL," +
+                "  amount DECIMAL(12,2) NOT NULL," +
+                "  per_day TINYINT(1) NOT NULL DEFAULT 0," +
+                "  FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE)",
+
+                "CREATE TABLE IF NOT EXISTS payments (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  bill_id INT NOT NULL," +
+                "  amount DECIMAL(12,2) NOT NULL," +
+                "  payment_method VARCHAR(20) NOT NULL," +
+                "  payment_date DATETIME NOT NULL," +
+                "  reference_no VARCHAR(100)," +
+                "  received_by VARCHAR(100)," +
+                "  FOREIGN KEY (bill_id) REFERENCES bills(id))",
+
+                "CREATE TABLE IF NOT EXISTS charge_schedules (" +
+                "  id INT PRIMARY KEY AUTO_INCREMENT," +
+                "  description VARCHAR(255) NOT NULL," +
+                "  category VARCHAR(20) NOT NULL," +
+                "  unit_price DECIMAL(12,2) NOT NULL," +
+                "  ward VARCHAR(50) NULL," +
+                "  per_day TINYINT(1) NOT NULL DEFAULT 0," +
+                "  is_active TINYINT(1) NOT NULL DEFAULT 1)"
+            };
+
+            foreach (var sql in ddl)
+            {
+                using (var cmd = new MySqlCommand(sql, conn))
+                    cmd.ExecuteNonQuery();
+            }
+
+            // bill_items existed before per_day was added.
+            AddColumnIfMissing(conn, "bill_items", "per_day", "per_day TINYINT(1) NOT NULL DEFAULT 0");
+
+            // Breakdown/adjustment columns added after bills existed; schema.sql creates them directly.
+            var billColumns = new[]
+            {
+                new { Name = "subtotal", Ddl = "subtotal DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "discount_value", Ddl = "discount_value DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "discount_is_percent", Ddl = "discount_is_percent TINYINT(1) NOT NULL DEFAULT 1" },
+                new { Name = "discount_reason", Ddl = "discount_reason VARCHAR(255)" },
+                new { Name = "discount_amount", Ddl = "discount_amount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "eligibility", Ddl = "eligibility VARCHAR(20) NOT NULL DEFAULT 'None'" },
+                new { Name = "eligibility_id_no", Ddl = "eligibility_id_no VARCHAR(50)" },
+                new { Name = "statutory_discount", Ddl = "statutory_discount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                // Existing bills keep 0% so their totals don't change; new bills start at BillingRates.DefaultVatRate.
+                new { Name = "vat_rate", Ddl = "vat_rate DECIMAL(5,2) NOT NULL DEFAULT 0" },
+                new { Name = "vat_amount", Ddl = "vat_amount DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "hmo_provider", Ddl = "hmo_provider VARCHAR(100)" },
+                new { Name = "hmo_loa_no", Ddl = "hmo_loa_no VARCHAR(50)" },
+                new { Name = "hmo_coverage", Ddl = "hmo_coverage DECIMAL(12,2) NOT NULL DEFAULT 0" },
+                new { Name = "hmo_amount", Ddl = "hmo_amount DECIMAL(12,2) NOT NULL DEFAULT 0" }
+            };
+
+            foreach (var col in billColumns)
+                AddColumnIfMissing(conn, "bills", col.Name, col.Ddl);
+
+            // Method-specific payment details (card, HMO, cash tendered).
+            AddColumnIfMissing(conn, "payments", "amount_tendered", "amount_tendered DECIMAL(12,2) NULL");
+            AddColumnIfMissing(conn, "payments", "card_type", "card_type VARCHAR(30)");
+            AddColumnIfMissing(conn, "payments", "card_last4", "card_last4 CHAR(4)");
+            AddColumnIfMissing(conn, "payments", "approval_code", "approval_code VARCHAR(50)");
+            AddColumnIfMissing(conn, "payments", "hmo_provider", "hmo_provider VARCHAR(100)");
+            AddColumnIfMissing(conn, "payments", "hmo_loa_no", "hmo_loa_no VARCHAR(50)");
+            // Payments recorded as "Insurance" before HMO became its own method.
+            using (var cmd = new MySqlCommand("UPDATE payments SET payment_method='HMO' WHERE payment_method='Insurance'", conn))
+                cmd.ExecuteNonQuery();
+
+            // Default admission charges, same as the seed in schema.sql.
+            using (var cmd = new MySqlCommand("SELECT COUNT(*) FROM charge_schedules", conn))
+            {
+                if (Convert.ToInt32(cmd.ExecuteScalar()) == 0)
+                {
+                    using (var seed = new MySqlCommand(
+                        "INSERT INTO charge_schedules (description, category, unit_price, ward, per_day, is_active) VALUES " +
+                        "('Admission fee', 'Other', 500.00, NULL, 0, 1)," +
+                        "('Room charge - General Ward', 'Room', 1500.00, 'General Ward', 1, 1)," +
+                        "('Room charge - Private', 'Room', 3000.00, 'Private', 1, 1)," +
+                        "('Room charge - ICU', 'Room', 8000.00, 'ICU', 1, 1)," +
+                        "('Nursing care', 'Other', 350.00, NULL, 1, 1)," +
+                        "('ICU monitoring', 'Procedure', 2000.00, 'ICU', 1, 1)," +
+                        "('Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL, 0, 1)", conn))
+                        seed.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private static void AddColumnIfMissing(MySqlConnection conn, string table, string column, string ddl)
+        {
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = @table AND column_name = @col", conn))
+            {
+                cmd.Parameters.AddWithValue("@table", table);
+                cmd.Parameters.AddWithValue("@col", column);
+                if (Convert.ToInt32(cmd.ExecuteScalar()) > 0) return;
+            }
+
+            using (var cmd = new MySqlCommand("ALTER TABLE " + table + " ADD COLUMN " + ddl, conn))
+                cmd.ExecuteNonQuery();
+        }
+    }
+}

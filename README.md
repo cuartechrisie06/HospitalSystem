@@ -48,8 +48,8 @@ and the dashboard opens with a banner naming the view.
 | Billing | create bills, add / remove charges, discounts / VAT / HMO, record payments, charge schedule | view bills and breakdown, print statements, add charges |
 | Activity Log | yes | hidden |
 
-Permissions are defined once in `Data/Permissions.cs`. The screens hide what a role can't do, and the data layer
-refuses it as well; every refused attempt is written to the activity log as "Access Denied".
+Permissions are defined once in `Data/Permissions.cs`. The screens hide what a role can't do, and the services
+refuse it as well (through `IPermissionGuard`); every refused attempt is written to the activity log as "Access Denied".
 
 ## Requirements
 
@@ -100,7 +100,7 @@ Or in **phpMyAdmin** (`http://localhost/phpmyadmin`): Import → choose `Data/sc
      (grab `nuget.exe` from [nuget.org/downloads](https://www.nuget.org/downloads) if you don't have it).
 3. Press **F5**.
 
-MySQL must be running *before* you launch the app, otherwise it will fail when it loads data.
+MySQL must be running *before* you launch the app; otherwise it shows a "Database unavailable" message and closes.
 
 ## Editing screens in the Designer
 
@@ -108,8 +108,9 @@ Every form and view opens in the Visual Studio Designer with all of its controls
 `LoginForm`, `DashboardForm` (sidebar), `DashboardView`, `PatientsView`, `DoctorsView`, `AppointmentsView`,
 `AdmissionsView`, `BillingView`, `ActivityLogView` and `ChargeScheduleForm`.
 
-The Designer never runs a class's constructor or helper methods. It only reads `InitializeComponent()`,
-so to keep a control visible there:
+Each screen has two constructors: a parameterless one that only calls `InitializeComponent()` (the Designer's),
+and one that takes the services the screen uses and loads its data (the app's). The Designer never runs a class's
+constructor or helper methods. It only reads `InitializeComponent()`, so to keep a control visible there:
 
 - declare it as a field and create it inside `InitializeComponent()` with plain statements
   (`this.btn = new System.Windows.Forms.Button();`, `this.btn.Text = "...";`, `this.panel.Controls.Add(this.btn);`)
@@ -121,25 +122,49 @@ the dashboard's alert rows, the ward bars and charts, and what each role is allo
 
 ## Connection String
 
-Set in `Data/Db.cs`:
+Default set in `Data/Db.cs` (`MySqlConnectionFactory.DefaultConnectionString`):
 
 ```
 Server=localhost;Port=3306;Database=hospital_system;Uid=root;Pwd=;
 ```
 
-Change it there if your MySQL uses a different port, user or password.
+Change it there if your MySQL uses a different port, user or password, or pass a different one to
+`new MySqlConnectionFactory(...)` in `Program.cs`.
 
 ## Technical Notes
 
 - **Data**: MySQL, accessed through `MySql.Data` (NuGet). Data persists between runs.
 - **UI**: Standard Windows Forms controls, laid out in code.
-- **Structure**:
+- **Structure** (screens → services → repositories → MySQL; each layer only talks to the interfaces of the one below):
   - `Models/` – Data classes (Patient, Doctor, Appointment, Admission, Bed, Bill, BillItem, Payment, Alert, ActivityItem)
-  - `Data/Db.cs` – Connection factory
-  - `Data/HospitalData.cs` – All SQL queries live here
+  - `Data/Db.cs` – `IDbConnectionFactory` and the MySQL connection factory
+  - `Data/SchemaMigrator.cs` – Upgrades an older database in place at startup
+  - `Data/Repositories/` – All SQL lives here, one repository per table group (`IPatientRepository`, `IBillRepository`, …)
   - `Data/schema.sql` – Database schema + seed data
+  - `Services/` – Business rules, activity logging and permission checks, one service per module
+    (`IPatientService`, `IAdmissionService`, `IBillingService`, …), plus `AlertMonitor` for the automatic alerts
+  - `Services/AppServices.cs` – Composition root: the only place that creates the concrete classes and wires them up
   - `Forms/` – LoginForm + DashboardForm
-  - `Views/` – PatientsView, DoctorsView, AppointmentsView, AdmissionsView, BillingView
+  - `Views/` – PatientsView, DoctorsView, AppointmentsView, AdmissionsView, BillingView, ActivityLogView
+
+### How it follows SOLID
+
+- **Single responsibility**: SQL is in the repositories, rules and logging in the services, layout and input in
+  the screens, schema upgrades in `SchemaMigrator`, and the role policy in `Permissions`.
+- **Open/closed**: modules react to each other through events instead of calling each other. Discharging raises
+  `IAdmissionService.Discharged` (billing updates the room days); every logged action raises
+  `IActivityLogger.Logged` (`AlertMonitor` re-checks the alerts). New reactions subscribe in `AppServices`
+  without editing the module that raises the event.
+- **Liskov substitution**: services depend only on repository interfaces, so any implementation (another database,
+  an in-memory one for tests) can be swapped in `AppServices` and the services behave the same.
+- **Interface segregation**: screens receive only the services they use, and read and write sides are split where
+  only one place writes: `IBedService` / `IBedOccupancy`, `IAlertService` / `IAlertWriter`,
+  `IActivityLogger` / `IActivityLogReader`, and `IAuthService` / `IUserSession` / `IUserDirectory`.
+- **Dependency inversion**: forms, views and services get their dependencies through their constructors as
+  interfaces. Nothing reaches for a global; `Program.cs` builds everything once with `AppServices.Create(...)`.
+
+To add a feature: put the SQL in a repository, the rule in a service, and give the screen the service through
+its constructor (passing it from `DashboardForm`, which hands each module its share of `AppServices`).
 
 ## Troubleshooting
 
@@ -154,5 +179,4 @@ Change it there if your MySQL uses a different port, user or password.
 
 - Move the connection string out of source and into `App.config`
 - Hash the stored passwords instead of keeping them in plain text
-- Add interfaces for better SOLID compliance
 - Add more validation and printable reports

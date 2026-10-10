@@ -1,4 +1,5 @@
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 using System;
 using System.Drawing;
@@ -34,20 +35,30 @@ namespace HospitalSystem.Views
         private Label lblList;
         private bool searchPlaceholderActive = true;
 
+        private readonly IPermissionGuard permissionGuard;
+        private readonly IPatientService patientService;
+        private readonly IAppointmentService appointmentService;
+        private readonly IAdmissionService admissionService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public PatientsView()
         {
             // Every control, grid column and event is set up in InitializeComponent()
             // (Designer format), so the Designer shows the complete screen.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                // Nurses register and edit patients; deactivating records is for administrators.
-                colToggle.Visible = Permissions.Can(Permission.DeactivatePatients);
-                LoadPatients("");
-            }
+        public PatientsView(IPermissionGuard permissionGuard, IPatientService patientService,
+            IAppointmentService appointmentService, IAdmissionService admissionService) : this()
+        {
+            this.permissionGuard = permissionGuard;
+            this.patientService = patientService;
+            this.appointmentService = appointmentService;
+            this.admissionService = admissionService;
+
+            // Nurses register and edit patients; deactivating records is for administrators.
+            colToggle.Visible = permissionGuard.Can(Permission.DeactivatePatients);
+            LoadPatients("");
         }
 
         private void BtnSearch_Click(object sender, EventArgs e) => LoadPatients(GetSearchText());
@@ -376,7 +387,7 @@ namespace HospitalSystem.Views
         // ===================== List loading =====================
         private void LoadPatients(string filter)
         {
-            var all = HospitalData.Patients;
+            var all = patientService.All();
             var source = all.AsEnumerable();
 
             if (!string.IsNullOrWhiteSpace(filter))
@@ -441,11 +452,11 @@ namespace HospitalSystem.Views
 
         private void ShowDetails(int id)
         {
-            var p = HospitalData.GetPatient(id);
+            var p = patientService.Get(id);
             if (p == null) return;
 
             bool editRequested;
-            using (var dlg = new PatientDetailsDialog(p))
+            using (var dlg = new PatientDetailsDialog(appointmentService, admissionService, p))
             {
                 dlg.ShowDialog(this);
                 editRequested = dlg.EditRequested;
@@ -458,9 +469,9 @@ namespace HospitalSystem.Views
 
         private void OpenEditForm(int? id)
         {
-            Patient existing = id.HasValue ? HospitalData.GetPatient(id.Value) : null;
+            Patient existing = id.HasValue ? patientService.Get(id.Value) : null;
 
-            using (var dlg = new PatientFormDialog(existing))
+            using (var dlg = new PatientFormDialog(permissionGuard, patientService, appointmentService, admissionService, existing))
             {
                 dlg.ShowDialog(this);
                 if (dlg.Saved)
@@ -470,10 +481,10 @@ namespace HospitalSystem.Views
 
         private void DeletePatientFlow(int id)
         {
-            var p = HospitalData.GetPatient(id);
+            var p = patientService.Get(id);
             if (p == null) return;
 
-            if (HospitalData.HasActiveAdmission(id))
+            if (admissionService.HasActive(id))
             {
                 MessageBox.Show(
                     "This patient currently has an active admission and must be discharged before they can be deleted.",
@@ -481,8 +492,8 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            int apptCount = HospitalData.AppointmentCountForPatient(id);
-            int admCount = HospitalData.AdmissionCountForPatient(id);
+            int apptCount = appointmentService.CountForPatient(id);
+            int admCount = admissionService.CountForPatient(id);
 
             string message = "Are you sure you want to delete this patient?";
             if (apptCount > 0 || admCount > 0)
@@ -494,19 +505,19 @@ namespace HospitalSystem.Views
             if (MessageBox.Show(message, "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
-            HospitalData.DeletePatient(p);
+            patientService.Deactivate(p);
             MessageBox.Show("Patient deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             LoadPatients(GetSearchText());
         }
         private void TogglePatientStatus(int id)
         {
-            var p = HospitalData.GetPatient(id);
+            var p = patientService.Get(id);
             if (p == null) return;
 
             if (p.Status == "Active")
             {
-                if (HospitalData.HasActiveAdmission(id))
+                if (admissionService.HasActive(id))
                 {
                     MessageBox.Show(
                         "This patient currently has an active admission and must be discharged before they can be deactivated.",
@@ -517,7 +528,7 @@ namespace HospitalSystem.Views
                 if (MessageBox.Show("Deactivate this patient?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
 
-                HospitalData.DeletePatient(p);
+                patientService.Deactivate(p);
                 MessageBox.Show("Patient deactivated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
@@ -525,7 +536,7 @@ namespace HospitalSystem.Views
                 if (MessageBox.Show("Activate this patient?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                     return;
 
-                HospitalData.ActivatePatient(p);
+                patientService.Activate(p);
                 MessageBox.Show("Patient activated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
 
@@ -538,8 +549,16 @@ namespace HospitalSystem.Views
         {
             public bool EditRequested { get; private set; } = false;
 
-            public PatientDetailsDialog(Patient p)
+            private readonly IAppointmentService appointmentService;
+            private readonly IAdmissionService admissionService;
+
+
+            public PatientDetailsDialog(IAppointmentService appointmentService, IAdmissionService admissionService,
+                Patient p)
             {
+                this.appointmentService = appointmentService;
+                this.admissionService = admissionService;
+
                 this.Text = "Patient Details";
                 this.Size = new Size(440, 540);
                 this.StartPosition = FormStartPosition.CenterParent;
@@ -589,9 +608,9 @@ namespace HospitalSystem.Views
                 this.Controls.Add(body);
                 body.BringToFront();
 
-                int apptCount = HospitalData.AppointmentCountForPatient(p.Id);
-                int admCount = HospitalData.AdmissionCountForPatient(p.Id);
-                bool hasActiveAdmission = HospitalData.HasActiveAdmission(p.Id);
+                int apptCount = appointmentService.CountForPatient(p.Id);
+                int admCount = admissionService.CountForPatient(p.Id);
+                bool hasActiveAdmission = admissionService.HasActive(p.Id);
 
                 AddRow(body, "Patient ID", p.PatientNo);
                 AddRow(body, "Full Name", p.FullName);
@@ -667,8 +686,20 @@ namespace HospitalSystem.Views
             private Button btnSave, btnCancel;
             public bool Saved { get; private set; } = false;
 
-            public PatientFormDialog(Patient existing)
+            private readonly IPermissionGuard permissionGuard;
+            private readonly IPatientService patientService;
+            private readonly IAppointmentService appointmentService;
+            private readonly IAdmissionService admissionService;
+
+
+            public PatientFormDialog(IPermissionGuard permissionGuard, IPatientService patientService,
+                IAppointmentService appointmentService, IAdmissionService admissionService, Patient existing)
             {
+                this.permissionGuard = permissionGuard;
+                this.patientService = patientService;
+                this.appointmentService = appointmentService;
+                this.admissionService = admissionService;
+
                 selectedId = existing?.Id ?? 0;
                 this.Text = existing == null ? "Add New Patient" : "Update Patient";
                 this.Size = new Size(420, 540);
@@ -691,7 +722,7 @@ namespace HospitalSystem.Views
                 // Show next Patient No. when adding new
                 if (existing == null)
                 {
-                    int nextId = HospitalData.GetNextPatientId();
+                    int nextId = patientService.NextId();
                     Label lblNextNo = new Label
                     {
                         Text = "Next Patient No.:  P-" + nextId.ToString("D4"),
@@ -783,7 +814,7 @@ namespace HospitalSystem.Views
                 this.Controls.Add(btnCancel);
 
                 // Deactivate button – only when editing an existing patient, for roles allowed to
-                if (existing != null && Permissions.Can(Permission.DeactivatePatients))
+                if (existing != null && permissionGuard.Can(Permission.DeactivatePatients))
                 {
                     Button btnDeactivate = new Button();
                     btnDeactivate.Text = "Deactivate";
@@ -902,7 +933,7 @@ namespace HospitalSystem.Views
                 {
                     if (selectedId == 0)
                     {
-                        var created = HospitalData.AddPatient(new Patient
+                        var created = patientService.Add(new Patient
                         {
                             FullName = txtName.Text.Trim(),
                             Birthdate = dtpBirthdate.Value.Date,
@@ -916,7 +947,7 @@ namespace HospitalSystem.Views
                     }
                     else
                     {
-                        var p = HospitalData.GetPatient(selectedId);
+                        var p = patientService.Get(selectedId);
                         if (p != null)
                         {
                             p.FullName = txtName.Text.Trim();
@@ -925,7 +956,7 @@ namespace HospitalSystem.Views
                             p.Contact = txtContact.Text.Trim();
                             p.Address = txtAddress.Text.Trim();
                             p.BloodType = cmbBlood.SelectedItem != null ? cmbBlood.SelectedItem.ToString() : null;
-                            HospitalData.UpdatePatient(p);
+                            patientService.Update(p);
                             MessageBox.Show("Patient updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
@@ -942,10 +973,10 @@ namespace HospitalSystem.Views
 
             private void BtnDeactivate_Click(object sender, EventArgs e)
             {
-                var p = HospitalData.GetPatient(selectedId);
+                var p = patientService.Get(selectedId);
                 if (p == null) return;
 
-                if (HospitalData.HasActiveAdmission(selectedId))
+                if (admissionService.HasActive(selectedId))
                 {
                     MessageBox.Show(
                         "This patient currently has an active admission and must be discharged before they can be deactivated.",
@@ -953,8 +984,8 @@ namespace HospitalSystem.Views
                     return;
                 }
 
-                int apptCount = HospitalData.AppointmentCountForPatient(selectedId);
-                int admCount = HospitalData.AdmissionCountForPatient(selectedId);
+                int apptCount = appointmentService.CountForPatient(selectedId);
+                int admCount = admissionService.CountForPatient(selectedId);
 
                 string message = "Are you sure you want to deactivate this patient?";
                 if (apptCount > 0 || admCount > 0)
@@ -966,7 +997,7 @@ namespace HospitalSystem.Views
                 if (MessageBox.Show(message, "Confirm Deactivate", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
 
-                HospitalData.DeletePatient(p);
+                patientService.Deactivate(p);
                 MessageBox.Show("Patient deactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 Saved = true;

@@ -29,7 +29,7 @@ namespace HospitalSystem.Models
 
         public TimeSpan WaitingTime => (IsPending ? DateTime.Now : AdmittedOn) - RequestedOn;
 
-        // These only change the object; HospitalData persists the change and frees the bed.
+        // These only change the object; AdmissionService persists the change and frees the bed.
         public void AssignBed(int bedId, DateTime date)
         {
             if (!IsPending)

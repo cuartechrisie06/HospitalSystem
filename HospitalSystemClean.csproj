@@ -117,8 +117,23 @@
     <Compile Include="Models\BillAdjustments.cs" />
     <Compile Include="Data\Db.cs" />
     <Compile Include="Data\DesignTimeHelper.cs" />
-    <Compile Include="Data\HospitalData.cs" />
-    <Compile Include="Data\AlertMonitor.cs" />
+    <Compile Include="Data\SchemaMigrator.cs" />
+    <Compile Include="Data\Repositories\StaffRepositories.cs" />
+    <Compile Include="Data\Repositories\PatientRepository.cs" />
+    <Compile Include="Data\Repositories\WardRepositories.cs" />
+    <Compile Include="Data\Repositories\AppointmentRepository.cs" />
+    <Compile Include="Data\Repositories\BillingRepositories.cs" />
+    <Compile Include="Data\Repositories\MonitoringRepositories.cs" />
+    <Compile Include="Models\BillingRates.cs" />
+    <Compile Include="Models\DurationText.cs" />
+    <Compile Include="Services\AppServices.cs" />
+    <Compile Include="Services\SecurityServices.cs" />
+    <Compile Include="Services\ActivityLogServices.cs" />
+    <Compile Include="Services\PeopleServices.cs" />
+    <Compile Include="Services\CareServices.cs" />
+    <Compile Include="Services\BillingServices.cs" />
+    <Compile Include="Services\AlertService.cs" />
+    <Compile Include="Services\AlertMonitor.cs" />
     <Compile Include="Data\Permissions.cs" />
     <Compile Include="Forms\LoginForm.cs">
       <SubType>Form</SubType>

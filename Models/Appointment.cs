@@ -19,7 +19,7 @@ namespace HospitalSystem.Models
 
         public bool IsOpen => Status == "Pending" || Status == "Confirmed";
 
-        // These only change the object; HospitalData persists the change.
+        // These only change the object; AppointmentService persists the change.
         public void Reschedule(DateTime newDate)
         {
             if (!IsOpen)

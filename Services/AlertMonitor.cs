@@ -4,15 +4,21 @@ using System.Linq;
 using MySql.Data.MySqlClient;
 using HospitalSystem.Models;
 
-namespace HospitalSystem.Data
+namespace HospitalSystem.Services
 {
+    public interface IAlertMonitor
+    {
+        // Re-checks every rule: raises new alerts, updates changed ones, resolves cleared ones.
+        void Evaluate();
+    }
+
     // Raises and resolves alerts from the state of the other modules; nobody creates alerts
-    // by hand. Evaluate() runs after every logged module action (HospitalData.LogActivity),
+    // by hand. Evaluate() runs after every logged module action (it listens to IActivityLogger.Logged),
     // at startup and when the dashboard opens (for time-based rules such as overdue appointments).
     //
     // Each rule yields a condition with a stable key. A new key raises an alert, a key that
     // is still present updates its alert's details, and a key that disappears resolves it.
-    public static class AlertMonitor
+    public class AlertMonitor : IAlertMonitor
     {
         public const string ModuleName = "Alerts";
 
@@ -21,14 +27,47 @@ namespace HospitalSystem.Data
         public static readonly TimeSpan AppointmentGrace = TimeSpan.FromHours(1);
         public const int HmoOverdueDays = 30;
 
-        private static bool evaluating;
+        private readonly IAlertService alerts;
+        private readonly IAlertWriter writer;
+        private readonly IBedService bedService;
+        private readonly IAdmissionService admissionService;
+        private readonly IDepartmentService departmentService;
+        private readonly IDoctorService doctorService;
+        private readonly IAppointmentService appointmentService;
+        private readonly IBillingService billingService;
+        private readonly IPatientService patientService;
+
+        private bool evaluating;
+
+        public AlertMonitor(IAlertService alerts, IAlertWriter writer, IBedService beds, IAdmissionService admissions,
+            IDepartmentService departments, IDoctorService doctors, IAppointmentService appointments,
+            IBillingService billing, IPatientService patients)
+        {
+            this.alerts = alerts;
+            this.writer = writer;
+            this.bedService = beds;
+            this.admissionService = admissions;
+            this.departmentService = departments;
+            this.doctorService = doctors;
+            this.appointmentService = appointments;
+            this.billingService = billing;
+            this.patientService = patients;
+        }
+
+        // Logging a module action re-checks the alert conditions, so alerts follow what happens
+        // in the modules. Alerts' own entries and sign-ins don't change any condition.
+        public void OnActivityLogged(string module)
+        {
+            if (module != ModuleName && module != "Security")
+                Evaluate();
+        }
 
         private class Condition
         {
             public string Key, Module, Title, Message, Severity;
         }
 
-        public static void Evaluate()
+        public void Evaluate()
         {
             if (evaluating) return;   // raising an alert logs, and logging would evaluate again
             evaluating = true;
@@ -36,23 +75,23 @@ namespace HospitalSystem.Data
             {
                 var current = Conditions().ToDictionary(c => c.Key);
 
-                foreach (var alert in HospitalData.Alerts.Where(a => a.SourceKey != null).ToList())
+                foreach (var alert in alerts.Open().Where(a => a.SourceKey != null).ToList())
                 {
                     Condition c;
                     if (current.TryGetValue(alert.SourceKey, out c))
                     {
                         if (alert.Title != c.Title || alert.Message != c.Message || alert.Severity != c.Severity)
-                            HospitalData.UpdateAlert(alert, c.Title, c.Message, c.Severity);
+                            writer.Update(alert, c.Title, c.Message, c.Severity);
                         current.Remove(alert.SourceKey);
                     }
                     else
                     {
-                        HospitalData.AutoResolveAlert(alert);
+                        writer.AutoResolve(alert);
                     }
                 }
 
                 foreach (var c in current.Values)
-                    HospitalData.RaiseAlert(c.Key, c.Module, c.Title, c.Message, c.Severity);
+                    writer.Raise(c.Key, c.Module, c.Title, c.Message, c.Severity);
             }
             catch (MySqlException)
             {
@@ -64,7 +103,7 @@ namespace HospitalSystem.Data
             }
         }
 
-        private static IEnumerable<Condition> Conditions()
+        private IEnumerable<Condition> Conditions()
         {
             return BedConditions()
                 .Concat(WaitingListConditions())
@@ -74,9 +113,9 @@ namespace HospitalSystem.Data
         }
 
         // Admissions: overall occupancy and ICU capacity.
-        private static IEnumerable<Condition> BedConditions()
+        private IEnumerable<Condition> BedConditions()
         {
-            var beds = HospitalData.Beds;
+            var beds = bedService.All();
             int total = beds.Count;
             int free = beds.Count(b => !b.IsOccupied);
 
@@ -107,15 +146,15 @@ namespace HospitalSystem.Data
         }
 
         // Admissions: patients on the waiting list.
-        private static IEnumerable<Condition> WaitingListConditions()
+        private IEnumerable<Condition> WaitingListConditions()
         {
-            var waiting = HospitalData.PendingAdmissions();
+            var waiting = admissionService.Pending();
             if (waiting.Count == 0) yield break;
 
             var longest = waiting.First();   // ordered by request time
-            int free = HospitalData.AvailableBeds().Count;
-            string message = $"{waiting.Count} patient(s) waiting for a bed; longest wait {HospitalData.FormatDuration(longest.WaitingTime)} " +
-                             $"({HospitalData.PatientName(longest.PatientId)}).";
+            int free = bedService.Available().Count;
+            string message = $"{waiting.Count} patient(s) waiting for a bed; longest wait {DurationText.Format(longest.WaitingTime)} " +
+                             $"({patientService.NameOf(longest.PatientId)}).";
             if (free > 0)
                 message += $" {free} bed(s) free now: assign them in Admissions.";
 
@@ -129,11 +168,11 @@ namespace HospitalSystem.Data
         }
 
         // Doctors: a department whose doctors are all off duty.
-        private static IEnumerable<Condition> StaffConditions()
+        private IEnumerable<Condition> StaffConditions()
         {
-            foreach (var dept in HospitalData.Departments)
+            foreach (var dept in departmentService.All())
             {
-                var doctors = HospitalData.Doctors.Where(d => d.DepartmentId == dept.Id && d.IsActive).ToList();
+                var doctors = doctorService.All().Where(d => d.DepartmentId == dept.Id && d.IsActive).ToList();
                 if (doctors.Count > 0 && !doctors.Any(d => d.IsOnDuty))
                     yield return new Condition
                     {
@@ -146,15 +185,15 @@ namespace HospitalSystem.Data
 
         // Appointments: a doctor who is off duty or deactivated but still has patients booked
         // for the rest of today, and appointments whose time passed without being closed.
-        private static IEnumerable<Condition> AppointmentConditions()
+        private IEnumerable<Condition> AppointmentConditions()
         {
             DateTime now = DateTime.Now;
 
-            var remainingToday = HospitalData.Appointments
+            var remainingToday = appointmentService.All()
                 .Where(a => a.IsOpen && a.ScheduledOn >= now && a.ScheduledOn.Date == now.Date);
             foreach (var group in remainingToday.GroupBy(a => a.DoctorId))
             {
-                var doctor = HospitalData.GetDoctor(group.Key);
+                var doctor = doctorService.Get(group.Key);
                 if (doctor == null || (doctor.IsActive && doctor.IsOnDuty)) continue;
 
                 var next = group.OrderBy(a => a.ScheduledOn).First();
@@ -162,12 +201,12 @@ namespace HospitalSystem.Data
                 {
                     Key = "APPT:DOCTOR:" + group.Key, Module = "Appointments", Severity = "Medium",
                     Title = "Doctor unavailable for booked patients",
-                    Message = $"{HospitalData.DoctorName(group.Key)} is {(doctor.IsActive ? "off duty" : "deactivated")} " +
-                              $"but has {group.Count()} appointment(s) left today (next {next.ScheduledOn:hh:mm tt}, {HospitalData.PatientName(next.PatientId)})."
+                    Message = $"{doctorService.NameOf(group.Key)} is {(doctor.IsActive ? "off duty" : "deactivated")} " +
+                              $"but has {group.Count()} appointment(s) left today (next {next.ScheduledOn:hh:mm tt}, {patientService.NameOf(next.PatientId)})."
                 };
             }
 
-            var overdue = HospitalData.Appointments
+            var overdue = appointmentService.All()
                 .Where(a => a.IsOpen && a.ScheduledOn < now - AppointmentGrace)
                 .OrderBy(a => a.ScheduledOn)
                 .ToList();
@@ -182,13 +221,13 @@ namespace HospitalSystem.Data
         }
 
         // Billing: patients discharged with an unpaid balance, and HMO coverage not collected in time.
-        private static IEnumerable<Condition> BillingConditions()
+        private IEnumerable<Condition> BillingConditions()
         {
-            var open = HospitalData.OpenBills().ToList();
+            var open = billingService.Open().ToList();
 
             var dischargedUnpaid = open
                 .Where(b => b.Balance > 0 && b.AdmissionId.HasValue &&
-                            HospitalData.Admissions.Any(a => a.Id == b.AdmissionId.Value && a.Status == "Discharged"))
+                            admissionService.All().Any(a => a.Id == b.AdmissionId.Value && a.Status == "Discharged"))
                 .ToList();
             if (dischargedUnpaid.Count > 0)
                 yield return new Condition

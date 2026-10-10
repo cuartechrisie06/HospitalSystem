@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -125,52 +126,74 @@ namespace HospitalSystem.Views
 
         private bool loading;
 
+        private readonly IUserSession session;
+        private readonly IPermissionGuard permissionGuard;
+        private readonly IActivityLogger activityLog;
+        private readonly IPatientService patientService;
+        private readonly IBedService bedService;
+        private readonly IAppointmentService appointmentService;
+        private readonly IAdmissionService admissionService;
+        private readonly IChargeScheduleService chargeScheduleService;
+        private readonly IBillingService billingService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public BillingView()
         {
             // Every control and event is set up in InitializeComponent() (Designer format),
             // so the Designer shows the complete screen. Lists that come from enums are
             // filled here instead, since designer code can't enumerate them.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
-                cmbEligibility.DataSource = Enum.GetValues(typeof(DiscountEligibility));
-                cmbMethod.DataSource = Enum.GetValues(typeof(PaymentMethod));
-                cmbDiscountType.SelectedIndex = 0;
-                cmbCardType.SelectedIndex = 0;
-                ShowMethodPanel();
+        public BillingView(IUserSession session, IPermissionGuard permissionGuard, IActivityLogger activityLog,
+            IPatientService patientService, IBedService bedService, IAppointmentService appointmentService,
+            IAdmissionService admissionService, IChargeScheduleService chargeScheduleService,
+            IBillingService billingService) : this()
+        {
+            this.session = session;
+            this.permissionGuard = permissionGuard;
+            this.activityLog = activityLog;
+            this.patientService = patientService;
+            this.bedService = bedService;
+            this.appointmentService = appointmentService;
+            this.admissionService = admissionService;
+            this.chargeScheduleService = chargeScheduleService;
+            this.billingService = billingService;
 
-                ApplyPermissions();
-                LoadPatients();
-                cmbFilter.SelectedIndex = 0;   // "All"; loads the bills list
-                LoadBills();
-            }
+            cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
+            cmbEligibility.DataSource = Enum.GetValues(typeof(DiscountEligibility));
+            cmbMethod.DataSource = Enum.GetValues(typeof(PaymentMethod));
+            cmbDiscountType.SelectedIndex = 0;
+            cmbCardType.SelectedIndex = 0;
+            ShowMethodPanel();
+
+            ApplyPermissions();
+            LoadPatients();
+            cmbFilter.SelectedIndex = 0;   // "All"; loads the bills list
+            LoadBills();
         }
 
         // Nurses view bills, print statements and add charges for what the patient used;
         // creating bills, removing charges, discounts/VAT/HMO, payments and the charge schedule are
-        // administrator work. Hidden here, and refused by HospitalData if reached anyway.
+        // administrator work. Hidden here, and refused by BillingService if reached anyway.
         private void ApplyPermissions()
         {
-            createPanel.Visible = Permissions.Can(Permission.CreateBills);
+            createPanel.Visible = permissionGuard.Can(Permission.CreateBills);
             lblNurseNotice.Visible = !createPanel.Visible;   // says what this role can do here
-            btnSchedule.Visible = Permissions.Can(Permission.ManageChargeSchedule);
-            btnAddItem.Visible = Permissions.Can(Permission.AddBillCharges);
-            btnRemoveItem.Visible = Permissions.Can(Permission.RemoveBillCharges);
-            if (!Permissions.Can(Permission.AdjustBills))
+            btnSchedule.Visible = permissionGuard.Can(Permission.ManageChargeSchedule);
+            btnAddItem.Visible = permissionGuard.Can(Permission.AddBillCharges);
+            btnRemoveItem.Visible = permissionGuard.Can(Permission.RemoveBillCharges);
+            if (!permissionGuard.Can(Permission.AdjustBills))
                 tabsSummary.TabPages.Remove(adjustmentsTab);
 
-            bool pays = Permissions.Can(Permission.RecordPayments);
+            bool pays = permissionGuard.Can(Permission.RecordPayments);
             paymentEntry.Visible = pays;
             lblPaymentsByAdmin.Visible = !pays;
         }
 
         private void BtnSchedule_Click(object sender, EventArgs e)
         {
-            using (var dlg = new ChargeScheduleForm())
+            using (var dlg = new ChargeScheduleForm(bedService, chargeScheduleService))
                 dlg.ShowDialog(this);
         }
 
@@ -1518,7 +1541,7 @@ namespace HospitalSystem.Views
         {
             cmbPatient.DisplayMember = "Name";
             cmbPatient.ValueMember = "Id";
-            cmbPatient.DataSource = HospitalData.ActivePatients().ToList();
+            cmbPatient.DataSource = patientService.Active().ToList();
         }
         
 
@@ -1528,7 +1551,7 @@ namespace HospitalSystem.Views
             int patientId = patient != null ? patient.Id : 0;
 
             var admissions = new List<KeyValuePair<int, string>> { new KeyValuePair<int, string>(0, "(none)") };
-            admissions.AddRange(HospitalData.Admissions
+            admissions.AddRange(admissionService.All()
                 .Where(a => a.PatientId == patientId && a.Status != "Cancelled")
                 .OrderByDescending(a => a.AdmittedOn)
                 .Select(a => new KeyValuePair<int, string>(a.Id, a.ToString())));
@@ -1537,7 +1560,7 @@ namespace HospitalSystem.Views
             cmbAdmission.ValueMember = "Key";
 
             var appointments = new List<KeyValuePair<int, string>> { new KeyValuePair<int, string>(0, "(none)") };
-            appointments.AddRange(HospitalData.Appointments
+            appointments.AddRange(appointmentService.All()
                 .Where(a => a.PatientId == patientId && a.Status != "Cancelled")
                 .OrderByDescending(a => a.ScheduledOn)
                 .Select(a => new KeyValuePair<int, string>(a.Id, a.ToString())));
@@ -1557,7 +1580,7 @@ namespace HospitalSystem.Views
             string filter = cmbFilter.SelectedItem as string ?? AllStatuses;
 
             loading = true;
-            gridBills.DataSource = HospitalData.Bills
+            gridBills.DataSource = billingService.All()
                 .Where(b => filter == AllStatuses
                     || (filter == WithBalance ? b.Status != BillStatus.Cancelled && b.TotalOutstanding > 0
                                               : b.Status.ToString() == filter))
@@ -1566,7 +1589,7 @@ namespace HospitalSystem.Views
                 {
                     b.Id,
                     b.BillNo,
-                    Patient = HospitalData.PatientName(b.PatientId),
+                    Patient = patientService.NameOf(b.PatientId),
                     For = b.AdmissionId.HasValue ? "ADM-" + b.AdmissionId.Value.ToString("D4")
                         : b.AppointmentId.HasValue ? "A-" + b.AppointmentId.Value.ToString("D4")
                         : "-",
@@ -1593,9 +1616,9 @@ namespace HospitalSystem.Views
             }
             loading = false;
 
-            decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
+            decimal patientsOwe = billingService.OutstandingBalance(), hmosOwe = billingService.OutstandingHmo();
             // Hospital-wide totals are for administrators; everyone sees each bill's own balance.
-            lblBills.Text = !Permissions.Can(Permission.ViewFinancials) ? "Bills" :
+            lblBills.Text = !permissionGuard.Can(Permission.ViewFinancials) ? "Bills" :
                 "Bills    Outstanding - patients: " + Money(patientsOwe) + "   HMO: " + Money(hmosOwe) +
                             "   Total: " + Money(patientsOwe + hmosOwe);
             LoadDetail();
@@ -1604,7 +1627,7 @@ namespace HospitalSystem.Views
         private Bill GetSelectedBill()
         {
             if (gridBills.CurrentRow == null) return null;
-            return HospitalData.GetBill(Convert.ToInt32(gridBills.CurrentRow.Cells["Id"].Value));
+            return billingService.Get(Convert.ToInt32(gridBills.CurrentRow.Cells["Id"].Value));
         }
 
         private void GridBills_SelectionChanged(object sender, EventArgs e)
@@ -1683,10 +1706,10 @@ namespace HospitalSystem.Views
                 : "No HMO coverage on this bill.";
 
             // The patient may owe on other bills too (e.g. an earlier admission).
-            decimal allBills = HospitalData.PatientOutstanding(bill.PatientId);
-            int count = HospitalData.PatientBillsWithBalance(bill.PatientId);
+            decimal allBills = billingService.PatientOutstanding(bill.PatientId);
+            int count = billingService.PatientBillsWithBalance(bill.PatientId);
             lblPatientOutstanding.Text = allBills > bill.Balance
-                ? HospitalData.PatientName(bill.PatientId) + " owes " + Money(allBills) + " across " + count + " bills."
+                ? patientService.NameOf(bill.PatientId) + " owes " + Money(allBills) + " across " + count + " bills."
                 : "";
         }
 
@@ -1715,7 +1738,7 @@ namespace HospitalSystem.Views
 
         private void LoadAdjustments(Bill bill)
         {
-            var adj = bill != null ? bill.Adjustments : new BillAdjustments { VatRate = HospitalData.DefaultVatRate };
+            var adj = bill != null ? bill.Adjustments : new BillAdjustments { VatRate = BillingRates.DefaultVatRate };
 
             numDiscount.Value = Math.Min(adj.DiscountValue, numDiscount.Maximum);
             cmbDiscountType.SelectedIndex = adj.DiscountIsPercent ? 0 : 1;
@@ -1728,7 +1751,7 @@ namespace HospitalSystem.Views
             numHmoCoverage.Value = Math.Min(adj.HmoCoverage, numHmoCoverage.Maximum);
 
             // Nudge staff when the patient's age qualifies them but no discount is applied yet.
-            var patient = bill != null ? HospitalData.GetPatient(bill.PatientId) : null;
+            var patient = bill != null ? patientService.Get(bill.PatientId) : null;
             lblEligibilityHint.Text = patient != null && patient.Age >= 60 && adj.Eligibility == DiscountEligibility.None
                 ? "Patient is " + patient.Age + ": eligible for the senior citizen discount (ask for the OSCA ID)."
                 : "";
@@ -1755,7 +1778,7 @@ namespace HospitalSystem.Views
 
             try
             {
-                HospitalData.UpdateBillAdjustments(bill, adj);
+                billingService.UpdateAdjustments(bill, adj);
                 LoadBills(bill.Id);
                 tabsSummary.SelectedIndex = 0;   // show the updated breakdown
             }
@@ -1770,7 +1793,7 @@ namespace HospitalSystem.Views
             var bill = GetSelectedBill();
             if (bill == null) return;
 
-            using (var printer = new BillStatementPrinter(bill))
+            using (var printer = new BillStatementPrinter(session, activityLog, patientService, bedService, admissionService, bill))
                 printer.ShowPreview(FindForm());
         }
 
@@ -1787,9 +1810,9 @@ namespace HospitalSystem.Views
             int appointmentId = cmbAppointment.SelectedValue != null ? Convert.ToInt32(cmbAppointment.SelectedValue) : 0;
 
             // One open bill per admission / appointment, so charges are never billed twice.
-            var existing = admissionId > 0 ? HospitalData.OpenBillForAdmission(admissionId) : null;
+            var existing = admissionId > 0 ? billingService.OpenForAdmission(admissionId) : null;
             if (existing == null && appointmentId > 0)
-                existing = HospitalData.OpenBillForAppointment(appointmentId);
+                existing = billingService.OpenForAppointment(appointmentId);
             if (existing != null)
             {
                 MessageBox.Show("That admission / appointment is already billed on " + existing.BillNo +
@@ -1799,14 +1822,14 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            var admission = admissionId > 0 ? HospitalData.Admissions.FirstOrDefault(a => a.Id == admissionId) : null;
-            var appointment = appointmentId > 0 ? HospitalData.Appointments.FirstOrDefault(a => a.Id == appointmentId) : null;
+            var admission = admissionId > 0 ? admissionService.All().FirstOrDefault(a => a.Id == admissionId) : null;
+            var appointment = appointmentId > 0 ? appointmentService.All().FirstOrDefault(a => a.Id == appointmentId) : null;
 
             var items = chkAutoCharges.Checked
-                ? HospitalData.DefaultChargesFor(admission, appointment)
+                ? billingService.DefaultChargesFor(admission, appointment)
                 : new List<BillItem>();
 
-            var bill = HospitalData.CreateBill(new Bill
+            var bill = billingService.Create(new Bill
             {
                 PatientId = patient.Id,
                 AdmissionId = admission != null ? admission.Id : (int?)null,
@@ -1838,7 +1861,7 @@ namespace HospitalSystem.Views
 
             try
             {
-                HospitalData.AddBillItem(bill, new BillItem
+                billingService.AddItem(bill, new BillItem
                 {
                     Description = txtItemDesc.Text.Trim(),
                     Category = (BillCategory)cmbCategory.SelectedItem,
@@ -1868,7 +1891,7 @@ namespace HospitalSystem.Views
 
             try
             {
-                HospitalData.RemoveBillItem(bill, itemId);
+                billingService.RemoveItem(bill, itemId);
                 LoadBills(bill.Id);
             }
             catch (InvalidOperationException ex)
@@ -1905,7 +1928,7 @@ namespace HospitalSystem.Views
 
             try
             {
-                HospitalData.RecordPayment(bill, payment);
+                billingService.RecordPayment(bill, payment);
 
                 txtReference.Clear();
                 txtCardLast4.Clear();

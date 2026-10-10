@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -31,20 +32,32 @@ namespace HospitalSystem.Views
         private Label lblBeds;
         private Label lblBedWarning;
 
+        private readonly IPatientService patientService;
+        private readonly IDoctorService doctorService;
+        private readonly IBedService bedService;
+        private readonly IAdmissionService admissionService;
+        private readonly IBillingService billingService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public AdmissionsView()
         {
             // Every control and event is set up in InitializeComponent() (Designer format),
             // so the Designer shows the complete screen.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                LoadCombos();
-                LoadAdmissions();
-                LoadBeds();
-            }
+        public AdmissionsView(IPatientService patientService, IDoctorService doctorService, IBedService bedService,
+            IAdmissionService admissionService, IBillingService billingService) : this()
+        {
+            this.patientService = patientService;
+            this.doctorService = doctorService;
+            this.bedService = bedService;
+            this.admissionService = admissionService;
+            this.billingService = billingService;
+
+            LoadCombos();
+            LoadAdmissions();
+            LoadBeds();
         }
 
         // Green for an available bed, red for an occupied one.
@@ -62,7 +75,7 @@ namespace HospitalSystem.Views
         // occupancy warning, and blocks admitting when no bed is free.
         private void UpdateBedBoardStatus()
         {
-            var beds = HospitalData.Beds;
+            var beds = bedService.All();
             int total = beds.Count;
             int occupied = beds.Count(b => b.IsOccupied);
             int available = total - occupied;
@@ -71,7 +84,7 @@ namespace HospitalSystem.Views
                 .GroupBy(b => b.Ward)
                 .OrderBy(g => g.Key)
                 .Select(g => $"{g.Key} {g.Count(b => !b.IsOccupied)}/{g.Count()}");
-            int waiting = HospitalData.PendingAdmissions().Count;
+            int waiting = admissionService.Pending().Count;
             lblBeds.Text = "Bed Status Board    —    " + string.Join("    •    ", wardParts) + "    (available/total)" +
                            (waiting > 0 ? $"    •    Waiting list: {waiting}" : "");
 
@@ -395,23 +408,23 @@ namespace HospitalSystem.Views
             // Not already admitted or on the waiting list.
             cmbPatient.DisplayMember = "Name";
             cmbPatient.ValueMember = "Id";
-            cmbPatient.DataSource = HospitalData.ActivePatients()
-                .Where(p => !HospitalData.HasActiveAdmission(p.Id))
+            cmbPatient.DataSource = patientService.Active()
+                .Where(p => !admissionService.HasActive(p.Id))
                 .ToList();
 
             cmbDoctor.DisplayMember = "Name";
             cmbDoctor.ValueMember = "Id";
-            cmbDoctor.DataSource = HospitalData.ActiveDoctors().ToList();
+            cmbDoctor.DataSource = doctorService.Active().ToList();
 
             cmbBed.DisplayMember = "Label";
             cmbBed.ValueMember = "Id";
-            cmbBed.DataSource = HospitalData.AvailableBeds();
+            cmbBed.DataSource = bedService.Available();
         }
 
         private void LoadAdmissions()
         {
             // Waiting list first (longest wait at the top), then the rest newest first.
-            gridAdmissions.DataSource = HospitalData.Admissions
+            gridAdmissions.DataSource = admissionService.All()
                 .OrderByDescending(a => a.IsPending)
                 .ThenBy(a => a.IsPending ? a.RequestedOn : DateTime.MaxValue)
                 .ThenByDescending(a => a.AdmittedOn)
@@ -419,14 +432,14 @@ namespace HospitalSystem.Views
                 {
                     a.Id,
                     a.AdmissionNo,
-                    Patient = HospitalData.PatientName(a.PatientId),
-                    Doctor = HospitalData.DoctorName(a.DoctorId),
-                    Bed = HospitalData.BedLabel(a.BedId),
+                    Patient = patientService.NameOf(a.PatientId),
+                    Doctor = doctorService.NameOf(a.DoctorId),
+                    Bed = bedService.Label(a.BedId),
                     Admitted = a.IsPending ? "-" : a.AdmittedOn.ToString("yyyy-MM-dd HH:mm"),
                     Discharged = a.DischargedOn.HasValue ? a.DischargedOn.Value.ToString("yyyy-MM-dd HH:mm") : "-",
                     a.Diagnosis,
                     a.Status,
-                    Days = a.IsPending ? "waiting " + HospitalData.FormatDuration(a.WaitingTime) : a.DaysStayed.ToString()
+                    Days = a.IsPending ? "waiting " + DurationText.Format(a.WaitingTime) : a.DaysStayed.ToString()
                 }).ToList();
 
             if (gridAdmissions.Columns["Id"] != null)
@@ -435,7 +448,7 @@ namespace HospitalSystem.Views
 
         private void LoadBeds()
         {
-            gridBeds.DataSource = HospitalData.Beds.Select(b => new
+            gridBeds.DataSource = bedService.All().Select(b => new
             {
                 b.Id,
                 Room = b.RoomNo,
@@ -453,7 +466,7 @@ namespace HospitalSystem.Views
         private void BtnAdmit_Click(object sender, EventArgs e)
         {
             // No bed to assign - alert and stop (also covered by the disabled button).
-            if (HospitalData.AvailableBeds().Count == 0)
+            if (bedService.Available().Count == 0)
             {
                 MessageBox.Show("No beds are currently available. Use \"Add to Waiting List\" instead.",
                     "No Beds Available", MessageBoxButtons.OK, MessageBoxIcon.Warning);
@@ -475,7 +488,7 @@ namespace HospitalSystem.Views
             Admission admission;
             try
             {
-                admission = HospitalData.AddAdmission(new Admission
+                admission = admissionService.Add(new Admission
                 {
                     PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
                     DoctorId = Convert.ToInt32(cmbDoctor.SelectedValue),
@@ -499,11 +512,11 @@ namespace HospitalSystem.Views
 
         // Admit -> billing trigger: every admission opens a bill from the pre-set charge schedule
         // once it has a bed (the room rate depends on the ward). Returns a note for the user.
-        private static string OpenAdmissionBill(Admission admission)
+        private string OpenAdmissionBill(Admission admission)
         {
             try
             {
-                var bill = HospitalData.EnsureAdmissionBill(admission);
+                var bill = billingService.EnsureAdmissionBill(admission);
                 return bill != null
                     ? $"\n\nBill {bill.BillNo} was created automatically from the charge schedule " +
                       $"({bill.Items.Count} item(s), {bill.TotalAmount:N2} so far). Per-day charges are " +
@@ -530,12 +543,12 @@ namespace HospitalSystem.Views
                 MessageBox.Show("Please enter a diagnosis / reason for admission.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
-            if (HospitalData.AvailableBeds().Count > 0 &&
+            if (bedService.Available().Count > 0 &&
                 MessageBox.Show("There are free beds right now. Add the patient to the waiting list anyway?", "Beds Available",
                     MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            var admission = HospitalData.AddAdmission(new Admission
+            var admission = admissionService.Add(new Admission
             {
                 PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
                 DoctorId = Convert.ToInt32(cmbDoctor.SelectedValue),
@@ -543,8 +556,8 @@ namespace HospitalSystem.Views
                 Diagnosis = txtDiagnosis.Text.Trim()
             });
 
-            int position = HospitalData.PendingAdmissions().Count;
-            MessageBox.Show($"{HospitalData.PatientName(admission.PatientId)} is on the waiting list ({admission.AdmissionNo}, " +
+            int position = admissionService.Pending().Count;
+            MessageBox.Show($"{patientService.NameOf(admission.PatientId)} is on the waiting list ({admission.AdmissionNo}, " +
                 $"position {position}).\n\nAssign a bed from the list below as soon as one frees up. The bill is created at that point.",
                 "Added to Waiting List", MessageBoxButtons.OK, MessageBoxIcon.Information);
             txtDiagnosis.Clear();
@@ -568,16 +581,16 @@ namespace HospitalSystem.Views
             }
 
             // Serve the waiting list in order unless the user deliberately skips ahead.
-            var first = HospitalData.PendingAdmissions().First();
+            var first = admissionService.Pending().First();
             if (first.Id != adm.Id &&
-                MessageBox.Show($"{HospitalData.PatientName(first.PatientId)} has been waiting longer " +
-                    $"({HospitalData.FormatDuration(first.WaitingTime)}). Assign this bed to {HospitalData.PatientName(adm.PatientId)} anyway?",
+                MessageBox.Show($"{patientService.NameOf(first.PatientId)} has been waiting longer " +
+                    $"({DurationText.Format(first.WaitingTime)}). Assign this bed to {patientService.NameOf(adm.PatientId)} anyway?",
                     "Waiting List Order", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
             try
             {
-                HospitalData.AssignBed(adm, Convert.ToInt32(cmbBed.SelectedValue));
+                admissionService.AssignBed(adm, Convert.ToInt32(cmbBed.SelectedValue));
             }
             catch (InvalidOperationException ex)
             {
@@ -585,7 +598,7 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            MessageBox.Show($"{HospitalData.PatientName(adm.PatientId)} admitted to {HospitalData.BedLabel(adm.BedId)}." + OpenAdmissionBill(adm),
+            MessageBox.Show($"{patientService.NameOf(adm.PatientId)} admitted to {bedService.Label(adm.BedId)}." + OpenAdmissionBill(adm),
                 "Bed Assigned", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadCombos();
             LoadAdmissions();
@@ -596,14 +609,14 @@ namespace HospitalSystem.Views
         {
             if (gridAdmissions.CurrentRow == null) return null;
             int id = Convert.ToInt32(gridAdmissions.CurrentRow.Cells["Id"].Value);
-            return HospitalData.Admissions.FirstOrDefault(a => a.Id == id);
+            return admissionService.All().FirstOrDefault(a => a.Id == id);
         }
 
         private void BtnDischarge_Click(object sender, EventArgs e)
         {
             if (gridAdmissions.CurrentRow == null) return;
             int id = Convert.ToInt32(gridAdmissions.CurrentRow.Cells["Id"].Value);
-            var adm = HospitalData.Admissions.FirstOrDefault(a => a.Id == id);
+            var adm = admissionService.All().FirstOrDefault(a => a.Id == id);
             if (adm == null) return;
 
             if (adm.Status != "Active")
@@ -615,8 +628,8 @@ namespace HospitalSystem.Views
             if (MessageBox.Show("Discharge this patient and free the bed?", "Confirm Discharge",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.Discharge(adm);
-                var bill = HospitalData.OpenBillForAdmission(adm.Id);
+                admissionService.Discharge(adm);
+                var bill = billingService.OpenForAdmission(adm.Id);
                 string msg = "Patient discharged. Stay: " + adm.DaysStayed + " day(s).";
                 if (bill != null)
                     msg += "\n\nBill " + bill.BillNo + " amount due: " + bill.TotalAmount.ToString("N2") +
@@ -639,11 +652,11 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            if (MessageBox.Show("Remove " + HospitalData.PatientName(adm.PatientId) + " from the waiting list?",
+            if (MessageBox.Show("Remove " + patientService.NameOf(adm.PatientId) + " from the waiting list?",
                 "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            HospitalData.RemoveFromWaitingList(adm);
+            admissionService.RemoveFromWaitingList(adm);
             LoadCombos();
             LoadAdmissions();
             LoadBeds();

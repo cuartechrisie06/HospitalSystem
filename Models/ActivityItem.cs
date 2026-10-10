@@ -4,6 +4,9 @@ namespace HospitalSystem.Models
 {
     public class ActivityItem
     {
+        // Recorded as the user for automatic actions (alerts, startup upgrades).
+        public const string SystemUser = "System";
+
         public int Id { get; set; }
         public string Module { get; set; }
         public string Action { get; set; }

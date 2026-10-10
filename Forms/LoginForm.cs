@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Forms
@@ -19,9 +20,17 @@ namespace HospitalSystem.Forms
         private Button btnLogin;
         private Label lblHint;
 
+        private readonly IAuthService auth;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public LoginForm()
         {
             InitializeComponent();
+        }
+
+        public LoginForm(IAuthService auth) : this()
+        {
+            this.auth = auth;
         }
 
         // Designer-generated layout: a white card centred on a grey background with the
@@ -185,7 +194,7 @@ namespace HospitalSystem.Forms
                 return;
             }
 
-            User user = HospitalData.SignIn(username, password);   // logs the attempt
+            User user = auth.SignIn(username, password);   // logs the attempt
             if (user == null)
             {
                 lblError.Text = "Invalid username or password.";

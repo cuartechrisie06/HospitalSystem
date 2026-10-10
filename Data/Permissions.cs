@@ -3,9 +3,7 @@ using HospitalSystem.Models;
 
 namespace HospitalSystem.Data
 {
-    // What each role may do. Views use Can() to hide what the user can't do; HospitalData
-    // calls Demand() on the protected operations, so a hidden button that slips through
-    // still can't change anything (and the attempt is logged).
+    // What each role may do. Checked through IPermissionGuard (Services/SecurityServices.cs).
     public enum Permission
     {
         ViewActivityLog,
@@ -21,12 +19,11 @@ namespace HospitalSystem.Data
         ViewFinancials           // hospital-wide outstanding balances and billing alerts
     }
 
+    // The role policy itself: pure, no state, so it can be checked for any user.
     public static class Permissions
     {
         public const string AdminRole = "Administrator";
         public const string NurseRole = "Nurse";
-
-        public static bool Can(Permission permission) => Can(HospitalData.CurrentUser, permission);
 
         public static bool Can(User user, Permission permission)
         {
@@ -36,16 +33,6 @@ namespace HospitalSystem.Data
             // Nurses (and any other role, least privilege): clinical work plus adding
             // charges for what the patient used. Money handling and records admin stay with admins.
             return permission == Permission.AddBillCharges;
-        }
-
-        public static void Demand(Permission permission, string action)
-        {
-            if (Can(permission)) return;
-
-            var user = HospitalData.CurrentUser;
-            HospitalData.LogActivity("Security", "Access Denied",
-                $"{(user != null ? user.DisplayName + " (" + user.Role + ")" : "Nobody signed in")} tried to {action}", "⛔");
-            throw new PermissionDeniedException("You don't have permission to " + action + ". Ask an administrator.");
         }
     }
 

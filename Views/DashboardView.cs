@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -109,14 +110,42 @@ namespace HospitalSystem.Views
             public int Total, Occupied;
         }
 
+        private readonly IUserSession session;
+        private readonly IPermissionGuard permissionGuard;
+        private readonly IPatientService patientService;
+        private readonly IDepartmentService departmentService;
+        private readonly IDoctorService doctorService;
+        private readonly IBedService bedService;
+        private readonly IAppointmentService appointmentService;
+        private readonly IAdmissionService admissionService;
+        private readonly IBillingService billingService;
+        private readonly IAlertService alertService;
+        private readonly IAlertMonitor alertMonitor;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public DashboardView()
         {
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-                LoadData();
+        public DashboardView(IUserSession session, IPermissionGuard permissionGuard, IPatientService patientService,
+            IDepartmentService departmentService, IDoctorService doctorService, IBedService bedService,
+            IAppointmentService appointmentService, IAdmissionService admissionService,
+            IBillingService billingService, IAlertService alertService, IAlertMonitor alertMonitor) : this()
+        {
+            this.session = session;
+            this.permissionGuard = permissionGuard;
+            this.patientService = patientService;
+            this.departmentService = departmentService;
+            this.doctorService = doctorService;
+            this.bedService = bedService;
+            this.appointmentService = appointmentService;
+            this.admissionService = admissionService;
+            this.billingService = billingService;
+            this.alertService = alertService;
+            this.alertMonitor = alertMonitor;
+
+            LoadData();
         }
 
         // Designer-generated layout, top to bottom inside a scrolling panel: the role banner,
@@ -1005,9 +1034,9 @@ namespace HospitalSystem.Views
         public void LoadData()
         {
             // Time-based rules (overdue appointments, long waits) are re-checked on every visit.
-            AlertMonitor.Evaluate();
+            alertMonitor.Evaluate();
 
-            bool seesFinancials = Permissions.Can(Permission.ViewFinancials);
+            bool seesFinancials = permissionGuard.Can(Permission.ViewFinancials);
             LoadBanner(seesFinancials);
             LoadCards(seesFinancials);
             LoadAlerts(seesFinancials);
@@ -1020,7 +1049,7 @@ namespace HospitalSystem.Views
 
         private void LoadBanner(bool admin)
         {
-            var user = HospitalData.CurrentUser;
+            var user = session.CurrentUser;
             int hour = DateTime.Now.Hour;
             string greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
 
@@ -1035,12 +1064,12 @@ namespace HospitalSystem.Views
 
         private void LoadCards(bool seesFinancials)
         {
-            int occupied = HospitalData.OccupiedBedsCount();
-            int totalBeds = HospitalData.TotalBedsCount();
-            double rate = HospitalData.OccupancyRate();
-            var today = HospitalData.AppointmentsToday();
-            var pending = HospitalData.PendingAdmissions();
-            var alerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
+            int occupied = bedService.OccupiedCount();
+            int totalBeds = bedService.TotalCount();
+            double rate = bedService.OccupancyRate();
+            var today = appointmentService.Today();
+            var pending = admissionService.Pending();
+            var alerts = VisibleAlerts(alertService.Active(), seesFinancials);
             int highAlerts = alerts.Count(a => a.Severity == "High");
 
             SetCard(cardAppointments, lblCardAppointmentsValue, lblCardAppointmentsSub, today.Count.ToString(),
@@ -1048,10 +1077,10 @@ namespace HospitalSystem.Views
             SetCard(cardOccupancy, lblCardOccupancyValue, lblCardOccupancySub, $"{occupied}/{totalBeds}",
                 $"{rate:0}% occupied  •  {totalBeds - occupied} free",
                 rate >= 100 ? Red : rate >= AlertMonitor.HighOccupancyRate * 100 ? Amber : Navy);
-            SetCard(cardAdmitted, lblCardAdmittedValue, lblCardAdmittedSub, HospitalData.ActiveAdmissions().Count.ToString(),
+            SetCard(cardAdmitted, lblCardAdmittedValue, lblCardAdmittedSub, admissionService.Active().Count.ToString(),
                 "currently in a bed", Navy);
             SetCard(cardPending, lblCardPendingValue, lblCardPendingSub, pending.Count.ToString(),
-                pending.Count == 0 ? "no one waiting" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
+                pending.Count == 0 ? "no one waiting" : "longest wait " + DurationText.Format(pending[0].WaitingTime),
                 pending.Count == 0 ? Navy : Amber);
             SetCard(cardAlerts, lblCardAlertsValue, lblCardAlertsSub, alerts.Count.ToString(),
                 alerts.Count == 0 ? "all clear" : $"{highAlerts} high priority",
@@ -1059,7 +1088,7 @@ namespace HospitalSystem.Views
 
             if (seesFinancials)
             {
-                decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
+                decimal patientsOwe = billingService.OutstandingBalance(), hmosOwe = billingService.OutstandingHmo();
                 SetCard(cardOutstanding, lblCardOutstandingValue, lblCardOutstandingSub, (patientsOwe + hmosOwe).ToString("N0"),
                     $"patients {patientsOwe:N0}  •  HMO {hmosOwe:N0}", patientsOwe + hmosOwe > 0 ? Amber : Green);
             }
@@ -1091,8 +1120,8 @@ namespace HospitalSystem.Views
 
         private void LoadAlerts(bool seesFinancials)
         {
-            var alerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
-            int acknowledged = VisibleAlerts(HospitalData.AcknowledgedAlerts(), seesFinancials).Count;
+            var alerts = VisibleAlerts(alertService.Active(), seesFinancials);
+            int acknowledged = VisibleAlerts(alertService.Acknowledged(), seesFinancials).Count;
 
             lblAlertsTitle.Text = "Alerts" + (acknowledged > 0 ? $"    ({acknowledged} acknowledged, still ongoing)" : "");
             lblAlertsHint.Text = seesFinancials
@@ -1115,8 +1144,8 @@ namespace HospitalSystem.Views
 
         private void LoadPendingAdmissions()
         {
-            var pending = HospitalData.PendingAdmissions();
-            int free = HospitalData.AvailableBeds().Count;
+            var pending = admissionService.Pending();
+            int free = bedService.Available().Count;
 
             lblPendingTitle.ForeColor = pending.Count > 0 ? Amber : Navy;
             lvPending.Items.Clear();
@@ -1127,9 +1156,9 @@ namespace HospitalSystem.Views
             foreach (var a in pending)
             {
                 var item = new ListViewItem((n++).ToString());
-                item.SubItems.Add(HospitalData.PatientName(a.PatientId));
-                item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
-                item.SubItems.Add(HospitalData.FormatDuration(a.WaitingTime));
+                item.SubItems.Add(patientService.NameOf(a.PatientId));
+                item.SubItems.Add(doctorService.NameOf(a.DoctorId));
+                item.SubItems.Add(DurationText.Format(a.WaitingTime));
                 item.SubItems.Add(a.Diagnosis ?? "");
                 if (a.WaitingTime >= AlertMonitor.LongWait)
                     item.ForeColor = Red;
@@ -1145,7 +1174,7 @@ namespace HospitalSystem.Views
 
         private static List<Appointment> UpcomingAppointments()
         {
-            return HospitalData.Appointments
+            return appointmentService.All()
                 .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != "Cancelled")
                 .OrderBy(a => a.ScheduledOn)
                 .ToList();
@@ -1163,8 +1192,8 @@ namespace HospitalSystem.Views
                 bool isToday = a.ScheduledOn.Date == DateTime.Today;
                 var item = new ListViewItem(isToday ? "Today" : a.ScheduledOn.ToString("ddd MMM dd"));
                 item.SubItems.Add(a.ScheduledOn.ToString("hh:mm tt"));
-                item.SubItems.Add(HospitalData.PatientName(a.PatientId));
-                item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
+                item.SubItems.Add(patientService.NameOf(a.PatientId));
+                item.SubItems.Add(doctorService.NameOf(a.DoctorId));
                 item.SubItems.Add(a.Status);
                 if (isToday) item.Font = boldRow;
                 if (a.IsOpen && a.ScheduledOn < DateTime.Now - AlertMonitor.AppointmentGrace)
@@ -1175,18 +1204,18 @@ namespace HospitalSystem.Views
 
         private void LoadOccupancy()
         {
-            wards = HospitalData.Beds
+            wards = bedService.All()
                 .GroupBy(b => b.Ward ?? "(no ward)")
                 .OrderBy(g => g.Key)
                 .Select(g => new WardOccupancy { Ward = g.Key, Total = g.Count(), Occupied = g.Count(b => b.IsOccupied) })
                 .ToList();
-            wards.Add(new WardOccupancy { Ward = "All wards", Total = HospitalData.TotalBedsCount(), Occupied = HospitalData.OccupiedBedsCount() });
+            wards.Add(new WardOccupancy { Ward = "All wards", Total = bedService.TotalCount(), Occupied = bedService.OccupiedCount() });
             occupancyBars.Invalidate();
         }
 
         private void LoadDoctors()
         {
-            var onDuty = HospitalData.DoctorsOnDuty();
+            var onDuty = doctorService.OnDuty();
             lvDoctors.Items.Clear();
             if (onDuty.Count == 0)
                 lvDoctors.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—" }));
@@ -1195,7 +1224,7 @@ namespace HospitalSystem.Views
             {
                 var item = new ListViewItem("Dr. " + d.FullName);
                 item.SubItems.Add(d.Specialization);
-                item.SubItems.Add(HospitalData.DepartmentName(d.DepartmentId));
+                item.SubItems.Add(departmentService.NameOf(d.DepartmentId));
                 lvDoctors.Items.Add(item);
             }
         }
@@ -1205,13 +1234,13 @@ namespace HospitalSystem.Views
             appointmentsPerDay = Enumerable.Range(0, 7)
                 .Select(i => DateTime.Today.AddDays(i - 6))
                 .Select(day => new KeyValuePair<string, int>(day.ToString("ddd"),
-                    HospitalData.Appointments.Count(a => a.ScheduledOn.Date == day)))
+                    appointmentService.All().Count(a => a.ScheduledOn.Date == day)))
                 .ToList();
 
             admissionsPerMonth = Enumerable.Range(0, 6)
                 .Select(i => DateTime.Today.AddMonths(i - 5))
                 .Select(month => new KeyValuePair<string, int>(month.ToString("MMM"),
-                    HospitalData.Admissions.Count(a => !a.IsPending && a.Status != "Cancelled" &&
+                    admissionService.All().Count(a => !a.IsPending && a.Status != "Cancelled" &&
                         a.AdmittedOn.Year == month.Year && a.AdmittedOn.Month == month.Month)))
                 .ToList();
 
@@ -1397,7 +1426,7 @@ namespace HospitalSystem.Views
             btnAck.FlatAppearance.BorderSize = 1;
             btnAck.Click += (s, e) =>
             {
-                HospitalData.AcknowledgeAlert(a.Id);
+                alertService.Acknowledge(a.Id);
                 LoadData();
             };
 
@@ -1469,7 +1498,7 @@ namespace HospitalSystem.Views
                 btnAck.FlatAppearance.BorderSize = 0;
                 btnAck.Click += (s, e) =>
                 {
-                    HospitalData.AcknowledgeAlert(a.Id);
+                    alertService.Acknowledge(a.Id);
                     dlg.DialogResult = DialogResult.OK;
                 };
 
