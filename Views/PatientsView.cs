@@ -11,8 +11,6 @@ namespace HospitalSystem.Views
 {
     public class PatientsView : UserControl
     {
-        // Philippine mobile format: 09171234567 or +639171234567
-        private static readonly Regex PhoneRegex = new Regex(@"^(09\d{9}|\+639\d{9})$");
         private const string SearchPlaceholder = "Search patients by ID, name, or contact...";
 
         private DataGridView grid;
@@ -335,7 +333,7 @@ namespace HospitalSystem.Views
 
             if (grid.Columns[e.ColumnIndex].Name == "colStatus" && e.Value != null)
             {
-                e.CellStyle.ForeColor = e.Value.ToString() == "Active"
+                e.CellStyle.ForeColor = e.Value.ToString() == PatientStatus.Active
                     ? Color.FromArgb(5, 150, 105)
                     : Color.FromArgb(156, 163, 175);
                 e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
@@ -344,7 +342,7 @@ namespace HospitalSystem.Views
             if (grid.Columns[e.ColumnIndex].Name == "colToggle")
             {
                 var status = grid.Rows[e.RowIndex].Cells["colStatus"].Value?.ToString();
-                e.Value = status == "Active" ? "Deactivate" : "Activate";
+                e.Value = status == PatientStatus.Active ? "Deactivate" : "Activate";
             }
         }
 
@@ -424,7 +422,7 @@ namespace HospitalSystem.Views
             if (grid.CurrentCell != null)
                 grid.CurrentCell = null;
 
-            int activeCount = all.Count(p => p.Status == "Active");
+            int activeCount = all.Count(p => p.Status == PatientStatus.Active);
             string noun = rows.Count == 1 ? "patient" : "patients";
             lblCount.Text = $"Showing {rows.Count} of {all.Count} {noun} ({activeCount} active)";
         }
@@ -505,17 +503,26 @@ namespace HospitalSystem.Views
             if (MessageBox.Show(message, "Confirm Delete", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                 return;
 
-            patientService.Deactivate(p);
+            patientService.Deactivate(p, AskDeactivationReason());
             MessageBox.Show("Patient deleted successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
             LoadPatients(GetSearchText());
         }
+        // Optional; kept on the record and shown in Patient Details.
+        internal static string AskDeactivationReason()
+        {
+            string reason = Microsoft.VisualBasic.Interaction.InputBox(
+                "Reason for deactivation (optional), e.g. transferred, deceased, duplicate record:",
+                "Deactivate Patient", "");
+            return string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+        }
+
         private void TogglePatientStatus(int id)
         {
             var p = patientService.Get(id);
             if (p == null) return;
 
-            if (p.Status == "Active")
+            if (p.Status == PatientStatus.Active)
             {
                 if (admissionService.HasActive(id))
                 {
@@ -528,7 +535,7 @@ namespace HospitalSystem.Views
                 if (MessageBox.Show("Deactivate this patient?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
 
-                patientService.Deactivate(p);
+                patientService.Deactivate(p, AskDeactivationReason());
                 MessageBox.Show("Patient deactivated.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             else
@@ -614,6 +621,7 @@ namespace HospitalSystem.Views
 
                 AddRow(body, "Patient ID", p.PatientNo);
                 AddRow(body, "Full Name", p.FullName);
+                AddRow(body, "Birthdate", p.Birthdate.HasValue ? p.Birthdate.Value.ToString("MMM dd, yyyy") : "-");
                 AddRow(body, "Age", p.Age.ToString());
                 AddRow(body, "Gender", p.Gender ?? "-");
                 AddRow(body, "Contact", p.Contact ?? "-");
@@ -622,6 +630,25 @@ namespace HospitalSystem.Views
                 AddRow(body, "Registered On", p.RegisteredOn.ToString("MMM dd, yyyy"));
                 AddRow(body, "Number of Appointments", apptCount.ToString());
                 AddRow(body, "Number of Admissions", admCount.ToString() + (hasActiveAdmission ? " (1 active)" : ""));
+
+                // Who changed the record's status, and when (kept in the database since this was added).
+                int extraRows = 1;   // Birthdate
+                if (!p.IsActive && p.DeactivatedAt.HasValue)
+                {
+                    AddRow(body, "Deactivated", p.DeactivatedAt.Value.ToString("MMM dd, yyyy h:mm tt") + " by " + (p.DeactivatedBy ?? "-"));
+                    extraRows++;
+                    if (!string.IsNullOrWhiteSpace(p.DeactivationReason))
+                    {
+                        AddRow(body, "Reason", p.DeactivationReason);
+                        extraRows++;
+                    }
+                }
+                else if (p.IsActive && p.ReactivatedAt.HasValue)
+                {
+                    AddRow(body, "Reactivated", p.ReactivatedAt.Value.ToString("MMM dd, yyyy h:mm tt") + " by " + (p.ReactivatedBy ?? "-"));
+                    extraRows++;
+                }
+                this.Height += extraRows * 34;
 
                 Button btnEdit = new Button();
                 btnEdit.Text = "Edit Patient";
@@ -911,9 +938,9 @@ namespace HospitalSystem.Views
                     focusTarget = txtContact;
                     return false;
                 }
-                if (!PhoneRegex.IsMatch(contact))
+                if (!Validation.PhilippineMobile.IsMatch(contact))
                 {
-                    error = "Contact must be a valid PH mobile number, e.g. 09171234567 or +639171234567.";
+                    error = Validation.PhoneMessage;
                     focusTarget = txtContact;
                     return false;
                 }
@@ -997,7 +1024,7 @@ namespace HospitalSystem.Views
                 if (MessageBox.Show(message, "Confirm Deactivate", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes)
                     return;
 
-                patientService.Deactivate(p);
+                patientService.Deactivate(p, AskDeactivationReason());
                 MessageBox.Show("Patient deactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
 
                 Saved = true;

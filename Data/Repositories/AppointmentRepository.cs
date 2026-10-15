@@ -11,6 +11,10 @@ namespace HospitalSystem.Data.Repositories
         void Insert(Appointment a);
         void UpdateStatus(Appointment a);
         void UpdateSchedule(Appointment a);
+
+        // Another open appointment for the doctor within the window, checked in the database
+        // so bookings made on other workstations count too.
+        bool HasClash(int doctorId, DateTime when, int ignoreId, int windowMinutes);
     }
 
     public class MySqlAppointmentRepository : IAppointmentRepository
@@ -69,6 +73,22 @@ namespace HospitalSystem.Data.Repositories
                 cmd.Parameters.AddWithValue("@status", a.Status);
                 cmd.Parameters.AddWithValue("@id", a.Id);
                 cmd.ExecuteNonQuery();
+            }
+        }
+
+        public bool HasClash(int doctorId, DateTime when, int ignoreId, int windowMinutes)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM appointments WHERE doctor_id=@doctorId AND id<>@ignoreId AND status<>@cancelled " +
+                "AND scheduled_on > @from AND scheduled_on < @to", conn))
+            {
+                cmd.Parameters.AddWithValue("@doctorId", doctorId);
+                cmd.Parameters.AddWithValue("@ignoreId", ignoreId);
+                cmd.Parameters.AddWithValue("@cancelled", AppointmentStatus.Cancelled);
+                cmd.Parameters.AddWithValue("@from", when.AddMinutes(-windowMinutes));
+                cmd.Parameters.AddWithValue("@to", when.AddMinutes(windowMinutes));
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
             }
         }
 

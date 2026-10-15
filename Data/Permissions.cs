@@ -16,7 +16,8 @@ namespace HospitalSystem.Data
         AdjustBills,             // discounts, senior/PWD, VAT, HMO coverage
         RecordPayments,
         ManageChargeSchedule,
-        ViewFinancials           // hospital-wide outstanding balances and billing alerts
+        ViewFinancials,          // hospital-wide outstanding balances, billing alerts and revenue reports
+        ManageBackups            // back up and restore the whole database
     }
 
     // The role policy itself: pure, no state, so it can be checked for any user.

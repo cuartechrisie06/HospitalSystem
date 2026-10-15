@@ -22,7 +22,9 @@ namespace HospitalSystem.Services
     // Changing occupancy: only the admission workflow does this, so it's kept off IBedService.
     public interface IBedOccupancy
     {
-        void SetOccupied(int bedId, bool occupied);
+        // Takes the bed only if it is still free in the database; false when another workstation took it first.
+        bool TryOccupy(int bedId);
+        void Release(int bedId);
     }
 
     public interface IAppointmentService
@@ -36,7 +38,8 @@ namespace HospitalSystem.Services
         void Complete(Appointment a);
         void Reschedule(Appointment a, DateTime newDate);
 
-        // Same 30-minute window the Schedule button uses; ignoreId lets a reschedule skip itself.
+        // Another open appointment for the doctor within 30 minutes, checked in the database so
+        // bookings made on other workstations count; ignoreId lets a reschedule skip itself.
         bool HasClash(int doctorId, DateTime when, int ignoreId = 0);
 
         int CountForPatient(int patientId);
@@ -72,7 +75,7 @@ namespace HospitalSystem.Services
         event Action<Admission> Discharged;
     }
 
-    public class BedService : IBedService, IBedOccupancy
+    public class BedService : IBedService, IBedOccupancy, IReloadable
     {
         private readonly IBedRepository repository;
         private readonly List<Bed> beds;
@@ -81,6 +84,12 @@ namespace HospitalSystem.Services
         {
             this.repository = repository;
             beds = repository.GetAll();
+        }
+
+        public void Reload()
+        {
+            beds.Clear();
+            beds.AddRange(repository.GetAll());
         }
 
         public List<Bed> All() => beds.ToList();
@@ -105,18 +114,31 @@ namespace HospitalSystem.Services
 
         public double OccupancyRate() => TotalCount() == 0 ? 0 : (double)OccupiedCount() / TotalCount() * 100;
 
-        public void SetOccupied(int bedId, bool occupied)
+        public bool TryOccupy(int bedId)
         {
-            repository.SetOccupied(bedId, occupied);
+            bool taken = repository.TryOccupy(bedId);
+
+            // Either we just took it, or someone else already had: occupied both ways.
+            var bed = Get(bedId);
+            if (bed != null)
+                bed.IsOccupied = true;
+            return taken;
+        }
+
+        public void Release(int bedId)
+        {
+            repository.Release(bedId);
 
             var bed = Get(bedId);
             if (bed != null)
-                bed.IsOccupied = occupied;
+                bed.IsOccupied = false;
         }
     }
 
-    public class AppointmentService : IAppointmentService
+    public class AppointmentService : IAppointmentService, IReloadable
     {
+        public const int ClashWindowMinutes = 30;
+
         private readonly IAppointmentRepository repository;
         private readonly IPatientService patients;
         private readonly IDoctorService doctors;
@@ -133,15 +155,30 @@ namespace HospitalSystem.Services
             appointments = repository.GetAll();
         }
 
+        public void Reload()
+        {
+            appointments.Clear();
+            appointments.AddRange(repository.GetAll());
+        }
+
         public List<Appointment> All() => appointments.ToList();
 
         public List<Appointment> Today() =>
-            appointments.Where(a => a.ScheduledOn.Date == DateTime.Today && a.Status != "Cancelled").ToList();
+            appointments.Where(a => a.ScheduledOn.Date == DateTime.Today && a.Status != AppointmentStatus.Cancelled).ToList();
 
         public Appointment Add(Appointment a)
         {
+            var patient = patients.Get(a.PatientId);
+            Validation.Require(patient != null, "Please select a patient.");
+            Validation.Require(patient.IsActive, "The selected patient is not active and cannot be scheduled. Please choose an active patient.");
+            var doctor = doctors.Get(a.DoctorId);
+            Validation.Require(doctor != null, "Please select a Department and a Doctor.");
+            Validation.Require(doctor.IsActive, "The selected doctor is no longer active. Please pick an active doctor.");
+            Validation.Require(a.ScheduledOn.Date >= DateTime.Today, "Appointments can't be scheduled in the past.");
+            Validation.Require(!HasClash(a.DoctorId, a.ScheduledOn), "This doctor already has an appointment around that time.");
+
             if (string.IsNullOrEmpty(a.Status))
-                a.Status = "Pending";
+                a.Status = AppointmentStatus.Pending;
 
             repository.Insert(a);
             appointments.Add(a);
@@ -155,7 +192,7 @@ namespace HospitalSystem.Services
             a.Status = status;
             repository.UpdateStatus(a);
 
-            string icon = status == "Confirmed" ? "✅" : status == "Cancelled" ? "❌" : "📅";
+            string icon = status == AppointmentStatus.Confirmed ? "✅" : status == AppointmentStatus.Cancelled ? "❌" : "📅";
             log.Log("Appointments", status, $"{status} appointment for {patients.NameOf(a.PatientId)}", icon);
         }
 
@@ -173,6 +210,7 @@ namespace HospitalSystem.Services
 
         public void Reschedule(Appointment a, DateTime newDate)
         {
+            Validation.Require(!HasClash(a.DoctorId, newDate, a.Id), "This doctor already has an appointment around that time.");
             DateTime oldDate = a.ScheduledOn;
             a.Reschedule(newDate);
 
@@ -181,65 +219,83 @@ namespace HospitalSystem.Services
                 $"Rescheduled appointment for {patients.NameOf(a.PatientId)}: {oldDate:yyyy-MM-dd HH:mm} → {a.ScheduledOn:yyyy-MM-dd HH:mm}", "🔁");
         }
 
-        public bool HasClash(int doctorId, DateTime when, int ignoreId = 0)
-        {
-            return appointments.Any(a =>
-                a.Id != ignoreId &&
-                a.DoctorId == doctorId &&
-                a.Status != "Cancelled" &&
-                Math.Abs((a.ScheduledOn - when).TotalMinutes) < 30);
-        }
+        public bool HasClash(int doctorId, DateTime when, int ignoreId = 0) =>
+            repository.HasClash(doctorId, when, ignoreId, ClashWindowMinutes);
 
         public int CountForPatient(int patientId) => appointments.Count(a => a.PatientId == patientId);
 
         public int CountForDoctor(int doctorId) => appointments.Count(a => a.DoctorId == doctorId);
 
         public int UpcomingCountForDoctor(int doctorId) =>
-            appointments.Count(a => a.DoctorId == doctorId && a.Status != "Cancelled" && a.ScheduledOn >= DateTime.Now);
+            appointments.Count(a => a.DoctorId == doctorId && a.Status != AppointmentStatus.Cancelled && a.ScheduledOn >= DateTime.Now);
     }
 
-    public class AdmissionService : IAdmissionService
+    public class AdmissionService : IAdmissionService, IReloadable
     {
+        private const string BedTakenMessage = "That bed is no longer available.";
+
         private readonly IAdmissionRepository repository;
         private readonly IBedService beds;
         private readonly IBedOccupancy occupancy;
         private readonly IPatientService patients;
+        private readonly IDoctorService doctors;
         private readonly IActivityLogger log;
         private readonly List<Admission> admissions;
 
         public AdmissionService(IAdmissionRepository repository, IBedService beds, IBedOccupancy occupancy,
-            IPatientService patients, IActivityLogger log)
+            IPatientService patients, IDoctorService doctors, IActivityLogger log)
         {
             this.repository = repository;
             this.beds = beds;
             this.occupancy = occupancy;
             this.patients = patients;
+            this.doctors = doctors;
             this.log = log;
             admissions = repository.GetAll();
         }
 
         public event Action<Admission> Discharged;
 
+        public void Reload()
+        {
+            admissions.Clear();
+            admissions.AddRange(repository.GetAll());
+        }
+
         public List<Admission> All() => admissions.ToList();
 
-        public List<Admission> Active() => admissions.Where(a => a.Status == "Active").ToList();
+        public List<Admission> Active() => admissions.Where(a => a.Status == AdmissionStatus.Active).ToList();
 
         public List<Admission> Pending() =>
             admissions.Where(a => a.IsPending).OrderBy(a => a.RequestedOn).ToList();
 
         public Admission Add(Admission a)
         {
+            var patient = patients.Get(a.PatientId);
+            Validation.Require(patient != null && doctors.Get(a.DoctorId) != null, "Please select the Patient and Doctor.");
+            Validation.Require(patient.IsActive, "The selected patient is not active. Reactivate the record before admitting.");
+            Validation.Require(doctors.Get(a.DoctorId).IsActive, "The selected doctor is no longer active. Please pick an active doctor.");
+            Validation.RequireText(a.Diagnosis, "Please enter a diagnosis / reason for admission.");
+            Validation.Require(!repository.HasOpenAdmission(a.PatientId),
+                "This patient is already admitted or on the waiting list.");
+
             bool waitlisted = a.BedId <= 0;
-            if (!waitlisted && !beds.Available().Any(b => b.Id == a.BedId))
-                throw new InvalidOperationException("That bed is no longer available.");
+            if (!waitlisted && !occupancy.TryOccupy(a.BedId))
+                throw new InvalidOperationException(BedTakenMessage);
 
             a.RequestedOn = DateTime.Now;
             a.AdmittedOn = a.RequestedOn;   // replaced when a bed is assigned to a waitlisted patient
-            a.Status = waitlisted ? "Pending" : "Active";
+            a.Status = waitlisted ? AdmissionStatus.Pending : AdmissionStatus.Active;
 
-            repository.Insert(a);
-            if (!waitlisted)
-                occupancy.SetOccupied(a.BedId, true);
+            try
+            {
+                repository.Insert(a);
+            }
+            catch
+            {
+                if (!waitlisted) occupancy.Release(a.BedId);   // don't leave the bed blocked by a failed admission
+                throw;
+            }
 
             admissions.Add(a);
 
@@ -252,14 +308,23 @@ namespace HospitalSystem.Services
 
         public void AssignBed(Admission a, int bedId)
         {
-            if (!beds.Available().Any(b => b.Id == bedId))
-                throw new InvalidOperationException("That bed is no longer available.");
+            if (!a.IsPending)
+                throw new InvalidOperationException("Only a pending admission can be assigned a bed.");
+            if (!occupancy.TryOccupy(bedId))
+                throw new InvalidOperationException(BedTakenMessage);
 
             TimeSpan waited = DateTime.Now - a.RequestedOn;
             a.AssignBed(bedId, DateTime.Now);
 
-            repository.UpdateBedAssignment(a);
-            occupancy.SetOccupied(a.BedId, true);
+            try
+            {
+                repository.UpdateBedAssignment(a);
+            }
+            catch
+            {
+                occupancy.Release(bedId);
+                throw;
+            }
 
             log.Log("Admissions", "Bed Assigned",
                 $"Admitted from waiting list: {patients.NameOf(a.PatientId)} to {beds.Label(a.BedId)} after waiting {DurationText.Format(waited)}", "🏥");
@@ -271,7 +336,7 @@ namespace HospitalSystem.Services
             a.Discharge(DateTime.Now);
 
             repository.UpdateDischarge(a);
-            occupancy.SetOccupied(a.BedId, false);
+            occupancy.Release(a.BedId);
 
             log.Log("Admissions", "Discharged", $"Discharged patient: {patients.NameOf(a.PatientId)} from {beds.Label(a.BedId)}", "🚪");
 

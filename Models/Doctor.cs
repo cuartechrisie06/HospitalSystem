@@ -10,7 +10,7 @@ namespace HospitalSystem.Models
         public string LicenseNumber { get; set; }
         public string Credentials { get; set; }
         public bool IsOnDuty { get; set; } = false;
-        public string Status { get; set; } = "Active";
+        public string Status { get; set; } = DoctorStatus.Active;
 
         // Set while the doctor is Inactive; holds the reason chosen at deactivation.
         public string DeactivationReason { get; set; }
@@ -20,7 +20,7 @@ namespace HospitalSystem.Models
             get { return "D-" + Id.ToString("D4"); }
         }
 
-        public bool IsActive => Status != "Inactive";
+        public bool IsActive => Status != DoctorStatus.Inactive;
 
         public override string ToString()
         {

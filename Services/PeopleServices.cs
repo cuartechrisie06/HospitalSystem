@@ -18,7 +18,9 @@ namespace HospitalSystem.Services
         Patient Add(Patient p);
         void Update(Patient p);
         void Activate(Patient p);
-        void Deactivate(Patient p);
+
+        // Refused while the patient is admitted or on the waiting list.
+        void Deactivate(Patient p, string reason = null, string notes = null);
     }
 
     public interface IDepartmentService
@@ -46,19 +48,30 @@ namespace HospitalSystem.Services
         void Activate(Doctor d);
     }
 
-    public class PatientService : IPatientService
+    public class PatientService : IPatientService, IReloadable
     {
         private readonly IPatientRepository repository;
+        private readonly IAdmissionRepository admissions;
+        private readonly IUserSession session;
         private readonly IActivityLogger log;
         private readonly IPermissionGuard guard;
         private readonly List<Patient> patients;
 
-        public PatientService(IPatientRepository repository, IActivityLogger log, IPermissionGuard guard)
+        public PatientService(IPatientRepository repository, IAdmissionRepository admissions, IUserSession session,
+            IActivityLogger log, IPermissionGuard guard)
         {
             this.repository = repository;
+            this.admissions = admissions;
+            this.session = session;
             this.log = log;
             this.guard = guard;
             patients = repository.GetAll();
+        }
+
+        public void Reload()
+        {
+            patients.Clear();
+            patients.AddRange(repository.GetAll());
         }
 
         public List<Patient> All() => patients.ToList();
@@ -77,9 +90,10 @@ namespace HospitalSystem.Services
 
         public Patient Add(Patient p)
         {
+            Validate(p);
             if (p.RegisteredOn == default)
                 p.RegisteredOn = DateTime.Now;
-            p.Status = "Active";
+            p.Status = PatientStatus.Active;
 
             repository.Insert(p);
             patients.Add(p);
@@ -89,6 +103,7 @@ namespace HospitalSystem.Services
 
         public void Update(Patient p)
         {
+            Validate(p);
             repository.Update(p);
             log.Log("Patients", "Updated", $"Updated patient record: {p.FullName} ({p.PatientNo})", "👤");
         }
@@ -96,29 +111,60 @@ namespace HospitalSystem.Services
         public void Activate(Patient p)
         {
             guard.Demand(Permission.DeactivatePatients, "reactivate patient records");
-            p.Status = "Active";
+            p.Status = PatientStatus.Active;
+            p.ReactivatedAt = DateTime.Now;
+            p.ReactivatedBy = CurrentUserName();
             repository.UpdateStatus(p);
             log.Log("Patients", "Activated", $"Activated patient: {p.FullName} ({p.PatientNo})", "👤");
         }
 
-        public void Deactivate(Patient p)
+        public void Deactivate(Patient p, string reason = null, string notes = null)
         {
             guard.Demand(Permission.DeactivatePatients, "deactivate patient records");
             if (p == null) return;
+            Validation.Require(!admissions.HasOpenAdmission(p.Id),
+                "This patient currently has an active admission and must be discharged before they can be deactivated.");
 
-            p.Status = "Inactive";
+            p.Status = PatientStatus.Inactive;
+            p.DeactivatedAt = DateTime.Now;
+            p.DeactivatedBy = CurrentUserName();
+            p.DeactivationReason = reason;
+            p.DeactivationNotes = notes;
             repository.UpdateStatus(p);
-            log.Log("Patients", "Deactivated", $"Deactivated patient: {p.FullName} ({p.PatientNo})", "👤");
+            log.Log("Patients", "Deactivated",
+                $"Deactivated patient: {p.FullName} ({p.PatientNo})" + (string.IsNullOrWhiteSpace(reason) ? "" : " - " + reason), "👤");
+        }
+
+        private string CurrentUserName() =>
+            session.CurrentUser != null ? session.CurrentUser.DisplayName : ActivityItem.SystemUser;
+
+        private static void Validate(Patient p)
+        {
+            Validation.RequireText(p.FullName, "Full Name is required.");
+            Validation.Require(p.Birthdate.HasValue, "Birthdate is required.");
+            Validation.Require(p.Birthdate.Value.Date <= DateTime.Today, "Birthdate cannot be in the future.");
+            Validation.Require(p.Birthdate.Value.Date >= DateTime.Today.AddYears(-130), "Please check the birthdate.");
+            Validation.RequireText(p.Gender, "Please select Gender (Male or Female).");
+            Validation.RequireText(p.Contact, "Contact number is required.");
+            Validation.Require(Validation.PhilippineMobile.IsMatch(p.Contact.Trim()), Validation.PhoneMessage);
         }
     }
 
-    public class DepartmentService : IDepartmentService
+    public class DepartmentService : IDepartmentService, IReloadable
     {
+        private readonly IDepartmentRepository repository;
         private readonly List<Department> departments;
 
         public DepartmentService(IDepartmentRepository repository)
         {
+            this.repository = repository;
             departments = repository.GetAll();
+        }
+
+        public void Reload()
+        {
+            departments.Clear();
+            departments.AddRange(repository.GetAll());
         }
 
         public List<Department> All() => departments.ToList();
@@ -132,7 +178,7 @@ namespace HospitalSystem.Services
         }
     }
 
-    public class DoctorService : IDoctorService
+    public class DoctorService : IDoctorService, IReloadable
     {
         private readonly IDoctorRepository repository;
         private readonly IDepartmentService departments;
@@ -148,6 +194,12 @@ namespace HospitalSystem.Services
             this.log = log;
             this.guard = guard;
             doctors = repository.GetAll();
+        }
+
+        public void Reload()
+        {
+            doctors.Clear();
+            doctors.AddRange(repository.GetAll());
         }
 
         public List<Doctor> All() => doctors.ToList();
@@ -167,7 +219,8 @@ namespace HospitalSystem.Services
         public Doctor Add(Doctor d)
         {
             guard.Demand(Permission.ManageDoctors, "add doctors");
-            d.Status = "Active";
+            Validate(d);
+            d.Status = DoctorStatus.Active;
 
             repository.Insert(d);
             doctors.Add(d);
@@ -178,6 +231,7 @@ namespace HospitalSystem.Services
         public void Update(Doctor d)
         {
             guard.Demand(Permission.ManageDoctors, "edit doctor records");
+            Validate(d);
             repository.Update(d);
             log.Log("Doctors", "Updated", $"Dr. {d.FullName} updated ({(d.IsOnDuty ? "On Duty" : "Off Duty")})", "🩺");
         }
@@ -185,7 +239,8 @@ namespace HospitalSystem.Services
         public void Deactivate(Doctor d, string reason)
         {
             guard.Demand(Permission.ManageDoctors, "deactivate doctors");
-            d.Status = "Inactive";
+            Validation.RequireText(reason, "Please choose a reason for deactivation.");
+            d.Status = DoctorStatus.Inactive;
             d.DeactivationReason = reason;
             d.IsOnDuty = false;
 
@@ -196,11 +251,19 @@ namespace HospitalSystem.Services
         public void Activate(Doctor d)
         {
             guard.Demand(Permission.ManageDoctors, "reactivate doctors");
-            d.Status = "Active";
+            d.Status = DoctorStatus.Active;
             d.DeactivationReason = null;
 
             repository.UpdateStatus(d);
             log.Log("Doctors", "Reactivated", $"Reactivated doctor: Dr. {d.FullName}", "🩺");
+        }
+
+        private void Validate(Doctor d)
+        {
+            Validation.RequireText(d.FullName, "Full Name is required.");
+            Validation.Require(departments.Get(d.DepartmentId) != null, "Please select a department.");
+            Validation.Require(string.IsNullOrWhiteSpace(d.Contact) || Validation.PhilippineMobile.IsMatch(d.Contact.Trim()),
+                Validation.PhoneMessage);
         }
     }
 }

@@ -32,7 +32,7 @@ namespace HospitalSystem.Services
         void AutoResolve(Alert a);
     }
 
-    public class AlertService : IAlertService, IAlertWriter
+    public class AlertService : IAlertService, IAlertWriter, IReloadable
     {
         private readonly IAlertRepository repository;
         private readonly IUserSession session;
@@ -45,6 +45,12 @@ namespace HospitalSystem.Services
             this.session = session;
             this.log = log;
             alerts = repository.GetOpen();
+        }
+
+        public void Reload()
+        {
+            alerts.Clear();
+            alerts.AddRange(repository.GetOpen());
         }
 
         public List<Alert> Open() => alerts.ToList();
@@ -64,7 +70,7 @@ namespace HospitalSystem.Services
                 Title = title,
                 Message = message,
                 Severity = severity,
-                Status = "Active",
+                Status = AlertStatus.Active,
                 IsAuto = true,
                 CreatedOn = DateTime.Now
             };
@@ -84,7 +90,7 @@ namespace HospitalSystem.Services
             // A worse situation than the one that was acknowledged needs attention again.
             if (escalated && a.IsAcknowledged)
             {
-                a.Status = "Active";
+                a.Status = AlertStatus.Active;
                 a.AcknowledgedBy = null;
             }
 
@@ -96,7 +102,7 @@ namespace HospitalSystem.Services
 
         public void AutoResolve(Alert a)
         {
-            a.Status = "Resolved";
+            a.Status = AlertStatus.Resolved;
             a.ResolvedOn = DateTime.Now;
             alerts.Remove(a);
 
@@ -111,7 +117,7 @@ namespace HospitalSystem.Services
 
             var user = session.CurrentUser;
             bool manual = a.SourceKey == null;
-            a.Status = manual ? "Resolved" : "Acknowledged";
+            a.Status = manual ? AlertStatus.Resolved : AlertStatus.Acknowledged;
             a.AcknowledgedBy = user != null ? user.DisplayName : ActivityItem.SystemUser;
             if (manual)
             {

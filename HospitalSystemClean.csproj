@@ -33,6 +33,7 @@
     <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Microsoft.VisualBasic" />
     <Reference Include="System" />
     <Reference Include="System.Core" />
     <Reference Include="System.Drawing" />
@@ -97,6 +98,8 @@
   <ItemGroup>
     <Compile Include="Models\ActivityItem.cs" />
     <Compile Include="Models\Alert.cs" />
+    <None Include="App.config" />
+    <None Include="Data\create_app_user.sql" />
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Models\User.cs" />
@@ -134,6 +137,16 @@
     <Compile Include="Services\BillingServices.cs" />
     <Compile Include="Services\AlertService.cs" />
     <Compile Include="Services\AlertMonitor.cs" />
+    <Compile Include="Models\ReportTable.cs" />
+    <Compile Include="Data\Repositories\BackupRepository.cs" />
+    <Compile Include="Data\Repositories\RepositorySet.cs" />
+    <Compile Include="Services\ReportService.cs" />
+    <Compile Include="Services\BackupService.cs" />
+    <Compile Include="Views\ReportPrinter.cs" />
+    <Compile Include="Models\Statuses.cs" />
+    <Compile Include="Services\PasswordHasher.cs" />
+    <Compile Include="Services\Validation.cs" />
+    <Compile Include="Services\IReloadable.cs" />
     <Compile Include="Data\Permissions.cs" />
     <Compile Include="Forms\LoginForm.cs">
       <SubType>Form</SubType>
@@ -160,7 +173,20 @@
     <Compile Include="Views\ChargeScheduleForm.cs">
       <SubType>Form</SubType>
     </Compile>
+    <Compile Include="Views\ReportsView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Views\BackupView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Views\BillingView.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
+    <Compile Include="Views\BillingView.Designer.cs">
+      <DependentUpon>BillingView.cs</DependentUpon>
+    </Compile>
+    <Compile Include="Views\BillingView.Payments.cs">
+      <DependentUpon>BillingView.cs</DependentUpon>
       <SubType>UserControl</SubType>
     </Compile>
   </ItemGroup>

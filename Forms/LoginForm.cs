@@ -131,9 +131,9 @@ namespace HospitalSystem.Forms
             //
             this.lblError.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.lblError.ForeColor = System.Drawing.Color.Firebrick;
-            this.lblError.Location = new System.Drawing.Point(30, 235);
+            this.lblError.Location = new System.Drawing.Point(30, 232);
             this.lblError.Name = "lblError";
-            this.lblError.Size = new System.Drawing.Size(270, 20);
+            this.lblError.Size = new System.Drawing.Size(280, 36);
             this.lblError.TabIndex = 6;
             //
             // btnLogin
@@ -194,7 +194,18 @@ namespace HospitalSystem.Forms
                 return;
             }
 
-            User user = auth.SignIn(username, password);   // logs the attempt
+            User user;
+            try
+            {
+                user = auth.SignIn(username, password);   // logs the attempt
+            }
+            catch (AccountLockedException ex)
+            {
+                lblError.Text = ex.Message;
+                txtPassword.Clear();
+                return;
+            }
+
             if (user == null)
             {
                 lblError.Text = "Invalid username or password.";

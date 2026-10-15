@@ -648,7 +648,7 @@ namespace HospitalSystem.Views
                 DepartmentId = Convert.ToInt32(cmbDepartment.SelectedValue),
                 ScheduledOn = when,
                 Reason = txtReason.Text.Trim(),
-                Status = "Pending"
+                Status = AppointmentStatus.Pending
             });
 
             MessageBox.Show("Appointment scheduled (Pending).", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -676,13 +676,13 @@ namespace HospitalSystem.Views
             var appt = GetSelectedAppointment();
             if (appt == null) return;
 
-            if (appt.Status != "Pending")
+            if (appt.Status != AppointmentStatus.Pending)
             {
                 MessageBox.Show("Only Pending appointments can be confirmed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            appointmentService.UpdateStatus(appt, "Confirmed");
+            appointmentService.UpdateStatus(appt, AppointmentStatus.Confirmed);
             MessageBox.Show("Appointment confirmed.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadAppointments();
         }
@@ -742,7 +742,7 @@ namespace HospitalSystem.Views
             var appt = GetSelectedAppointment();
             if (appt == null) return;
 
-            if (appt.Status != "Confirmed")
+            if (appt.Status != AppointmentStatus.Confirmed)
             {
                 MessageBox.Show("Only Confirmed appointments can be marked as completed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;

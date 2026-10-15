@@ -59,7 +59,7 @@ namespace HospitalSystem.Services
         void UpdateAdjustments(Bill b, BillAdjustments adj);
     }
 
-    public class ChargeScheduleService : IChargeScheduleService
+    public class ChargeScheduleService : IChargeScheduleService, IReloadable
     {
         private readonly IChargeScheduleRepository repository;
         private readonly IActivityLogger log;
@@ -74,11 +74,18 @@ namespace HospitalSystem.Services
             schedules = repository.GetAll();
         }
 
+        public void Reload()
+        {
+            schedules.Clear();
+            schedules.AddRange(repository.GetAll());
+        }
+
         public List<ChargeSchedule> All() => schedules.ToList();
 
         public ChargeSchedule Add(ChargeSchedule c)
         {
             guard.Demand(Permission.ManageChargeSchedule, "change the admission charge schedule");
+            Validate(c);
             c.IsActive = true;
 
             repository.Insert(c);
@@ -90,13 +97,20 @@ namespace HospitalSystem.Services
         public void Update(ChargeSchedule c)
         {
             guard.Demand(Permission.ManageChargeSchedule, "change the admission charge schedule");
+            Validate(c);
             repository.Update(c);
             log.Log("Billing", "Schedule Updated",
                 $"Scheduled charge \"{c.Description}\" updated ({c.UnitPrice:N2}, {c.Basis}{(c.IsActive ? "" : ", inactive")})", "📋");
         }
+
+        private static void Validate(ChargeSchedule c)
+        {
+            Validation.RequireText(c.Description, "Please enter a description.");
+            Validation.Require(c.UnitPrice > 0, "Unit price must be greater than zero.");
+        }
     }
 
-    public class BillingService : IBillingService
+    public class BillingService : IBillingService, IReloadable
     {
         private readonly IBillRepository repository;
         private readonly IChargeScheduleService charges;
@@ -121,6 +135,12 @@ namespace HospitalSystem.Services
             this.guard = guard;
             this.log = log;
             bills = repository.GetAll();
+        }
+
+        public void Reload()
+        {
+            bills.Clear();
+            bills.AddRange(repository.GetAll());
         }
 
         public List<Bill> All() => bills.ToList();
@@ -182,6 +202,11 @@ namespace HospitalSystem.Services
 
         public Bill Create(Bill b, IEnumerable<BillItem> items)
         {
+            Validation.Require(patients.Get(b.PatientId) != null, "Please select a patient.");
+            items = items.ToList();
+            foreach (var item in items)
+                ValidateItem(item);
+
             var user = session.CurrentUser;
             b.BillDate = b.BillDate == default ? DateTime.Now : b.BillDate;
             b.CreatedAt = DateTime.Now;
@@ -247,6 +272,7 @@ namespace HospitalSystem.Services
         public void AddItem(Bill b, BillItem item)
         {
             guard.Demand(Permission.AddBillCharges, "add charges to bills");
+            ValidateItem(item);
             b.AddItem(item);
             repository.InsertItem(b, item);
             log.Log("Billing", "Item Added", $"Added \"{item.Description}\" to {b.BillNo} ({item.Amount:N2})", "🧾");
@@ -275,6 +301,13 @@ namespace HospitalSystem.Services
                 $"{p.MethodLabel} payment of {p.Amount:N2} received for {b.BillNo}" +
                 (string.IsNullOrEmpty(p.Details) ? "" : $" ({p.Details})") +
                 $". Patient balance {b.Balance:N2}" + (b.HmoBalance > 0 ? $", HMO outstanding {b.HmoBalance:N2}" : ""), "💰");
+        }
+
+        private static void ValidateItem(BillItem item)
+        {
+            Validation.RequireText(item.Description, "Please enter a description.");
+            Validation.Require(item.Quantity >= 1, "Quantity must be at least 1.");
+            Validation.Require(item.UnitPrice >= 0, "Unit price cannot be negative.");
         }
 
         public void UpdateAdjustments(Bill b, BillAdjustments adj)

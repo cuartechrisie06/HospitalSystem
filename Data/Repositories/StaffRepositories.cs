@@ -8,6 +8,14 @@ namespace HospitalSystem.Data.Repositories
     public interface IUserRepository
     {
         List<User> GetAll();
+
+        // Read fresh from the database at sign-in, so a lock set on another workstation counts.
+        User Get(string username);
+
+        void UpdatePassword(User u);
+
+        // Failed attempt count and lock time.
+        void UpdateLoginState(User u);
     }
 
     public interface IDepartmentRepository
@@ -30,25 +38,67 @@ namespace HospitalSystem.Data.Repositories
         private readonly IDbConnectionFactory db;
         public MySqlUserRepository(IDbConnectionFactory db) { this.db = db; }
 
+        private const string Columns = "username, password, display_name, role, failed_attempts, locked_until";
+
         public List<User> GetAll()
         {
             var list = new List<User>();
             using (var conn = db.OpenConnection())
-            using (var cmd = new MySqlCommand("SELECT username, password, display_name, role FROM users", conn))
+            using (var cmd = new MySqlCommand("SELECT " + Columns + " FROM users", conn))
             using (var r = cmd.ExecuteReader())
             {
                 while (r.Read())
-                {
-                    list.Add(new User
-                    {
-                        Username = r.GetString("username"),
-                        Password = r.GetString("password"),
-                        DisplayName = Sql.ReadString(r, "display_name"),
-                        Role = Sql.ReadString(r, "role")
-                    });
-                }
+                    list.Add(Read(r));
             }
             return list;
+        }
+
+        public User Get(string username)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand("SELECT " + Columns + " FROM users WHERE username=@username", conn))
+            {
+                cmd.Parameters.AddWithValue("@username", username);
+                using (var r = cmd.ExecuteReader())
+                    return r.Read() ? Read(r) : null;
+            }
+        }
+
+        public void UpdatePassword(User u)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE users SET password=@password WHERE username=@username", conn))
+            {
+                cmd.Parameters.AddWithValue("@password", u.Password);
+                cmd.Parameters.AddWithValue("@username", u.Username);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        public void UpdateLoginState(User u)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "UPDATE users SET failed_attempts=@failed, locked_until=@lockedUntil WHERE username=@username", conn))
+            {
+                cmd.Parameters.AddWithValue("@failed", u.FailedAttempts);
+                cmd.Parameters.AddWithValue("@lockedUntil", Sql.OrNull(u.LockedUntil));
+                cmd.Parameters.AddWithValue("@username", u.Username);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private static User Read(MySqlDataReader r)
+        {
+            return new User
+            {
+                Username = r.GetString("username"),
+                Password = r.GetString("password"),
+                DisplayName = Sql.ReadString(r, "display_name"),
+                Role = Sql.ReadString(r, "role"),
+                FailedAttempts = r.GetInt32("failed_attempts"),
+                LockedUntil = r.IsDBNull(r.GetOrdinal("locked_until")) ? (DateTime?)null : r.GetDateTime("locked_until")
+            };
         }
     }
 

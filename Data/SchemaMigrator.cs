@@ -24,6 +24,9 @@ namespace HospitalSystem.Data
                 EnsureDoctorColumns(conn);
                 int retired = EnsureWorkflowColumns(conn);
                 EnsureBillingTables(conn);
+                EnsureSecurityColumns(conn);
+                EnsurePatientColumns(conn);
+                EnsureIndexes(conn);
                 return retired;
             }
         }
@@ -187,7 +190,63 @@ namespace HospitalSystem.Data
             }
         }
 
-        private static void AddColumnIfMissing(MySqlConnection conn, string table, string column, string ddl)
+        // Password hashes are longer than the old plain-text column allowed; failed sign-ins lock
+        // an account for a while (tracked in the database so every workstation sees the lock).
+        // AuthService replaces any remaining plain-text passwords with hashes on startup.
+        private static void EnsureSecurityColumns(MySqlConnection conn)
+        {
+            using (var cmd = new MySqlCommand(
+                "SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.columns " +
+                "WHERE table_schema = DATABASE() AND table_name = 'users' AND column_name = 'password'", conn))
+            {
+                if (Convert.ToInt64(cmd.ExecuteScalar()) < 255)
+                {
+                    using (var alter = new MySqlCommand("ALTER TABLE users MODIFY password VARCHAR(255) NOT NULL", conn))
+                        alter.ExecuteNonQuery();
+                }
+            }
+
+            AddColumnIfMissing(conn, "users", "failed_attempts", "failed_attempts INT NOT NULL DEFAULT 0");
+            AddColumnIfMissing(conn, "users", "locked_until", "locked_until DATETIME NULL");
+        }
+
+        // A real birthdate (age alone goes stale every birthday) and who deactivated or
+        // reactivated a patient record, and when.
+        private static void EnsurePatientColumns(MySqlConnection conn)
+        {
+            bool hadBirthdate = ColumnExists(conn, "patients", "birthdate");
+            AddColumnIfMissing(conn, "patients", "birthdate", "birthdate DATE NULL");
+            if (!hadBirthdate)
+            {
+                // Best estimate for records saved before birthdates were stored: the age they
+                // were registered with, counted back from the registration date.
+                using (var cmd = new MySqlCommand(
+                    "UPDATE patients SET birthdate = DATE_SUB(DATE(registered_on), INTERVAL age YEAR) WHERE birthdate IS NULL", conn))
+                    cmd.ExecuteNonQuery();
+            }
+
+            AddColumnIfMissing(conn, "patients", "deactivated_at", "deactivated_at DATETIME NULL");
+            AddColumnIfMissing(conn, "patients", "deactivated_by", "deactivated_by VARCHAR(100) NULL");
+            AddColumnIfMissing(conn, "patients", "deactivation_reason", "deactivation_reason VARCHAR(255) NULL");
+            AddColumnIfMissing(conn, "patients", "deactivation_notes", "deactivation_notes VARCHAR(500) NULL");
+            AddColumnIfMissing(conn, "patients", "reactivated_at", "reactivated_at DATETIME NULL");
+            AddColumnIfMissing(conn, "patients", "reactivated_by", "reactivated_by VARCHAR(100) NULL");
+        }
+
+        // Lookups the app runs often. Foreign key columns are already indexed by InnoDB.
+        private static void EnsureIndexes(MySqlConnection conn)
+        {
+            AddIndexIfMissing(conn, "appointments", "ix_appointments_doctor_time", "doctor_id, scheduled_on");
+            AddIndexIfMissing(conn, "appointments", "ix_appointments_status", "status");
+            AddIndexIfMissing(conn, "admissions", "ix_admissions_status", "status");
+            AddIndexIfMissing(conn, "bills", "ix_bills_status", "status");
+            AddIndexIfMissing(conn, "alerts", "ix_alerts_status", "status");
+            AddIndexIfMissing(conn, "activity_log", "ix_activity_created", "created_at");
+            AddIndexIfMissing(conn, "activity_log", "ix_activity_module", "module");
+            AddIndexIfMissing(conn, "activity_log", "ix_activity_username", "username");
+        }
+
+        private static bool ColumnExists(MySqlConnection conn, string table, string column)
         {
             using (var cmd = new MySqlCommand(
                 "SELECT COUNT(*) FROM information_schema.columns " +
@@ -195,8 +254,28 @@ namespace HospitalSystem.Data
             {
                 cmd.Parameters.AddWithValue("@table", table);
                 cmd.Parameters.AddWithValue("@col", column);
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
+            }
+        }
+
+        private static void AddIndexIfMissing(MySqlConnection conn, string table, string index, string columns)
+        {
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM information_schema.statistics " +
+                "WHERE table_schema = DATABASE() AND table_name = @table AND index_name = @index", conn))
+            {
+                cmd.Parameters.AddWithValue("@table", table);
+                cmd.Parameters.AddWithValue("@index", index);
                 if (Convert.ToInt32(cmd.ExecuteScalar()) > 0) return;
             }
+
+            using (var cmd = new MySqlCommand("CREATE INDEX " + index + " ON " + table + " (" + columns + ")", conn))
+                cmd.ExecuteNonQuery();
+        }
+
+        private static void AddColumnIfMissing(MySqlConnection conn, string table, string column, string ddl)
+        {
+            if (ColumnExists(conn, table, column)) return;
 
             using (var cmd = new MySqlCommand("ALTER TABLE " + table + " ADD COLUMN " + ddl, conn))
                 cmd.ExecuteNonQuery();

@@ -12,7 +12,6 @@ namespace HospitalSystem.Views
     public class DoctorsView : UserControl
     {
         // Philippine mobile format: 09171234567 or +639171234567
-        private static readonly Regex PhoneRegex = new Regex(@"^(09\d{9}|\+639\d{9})$");
         private const string SearchPlaceholder = "Search doctors by ID, name, specialization...";
 
         private DataGridView grid;
@@ -365,7 +364,7 @@ namespace HospitalSystem.Views
 
             if (colName == "colStatus" && e.Value != null)
             {
-                e.CellStyle.ForeColor = e.Value.ToString() == "Active"
+                e.CellStyle.ForeColor = e.Value.ToString() == DoctorStatus.Active
                     ? Color.FromArgb(5, 150, 105)
                     : Color.FromArgb(156, 163, 175);
                 e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
@@ -377,7 +376,7 @@ namespace HospitalSystem.Views
             if (colName == "colAction")
             {
                 var statusObj = grid.Rows[e.RowIndex].Cells["colStatus"].Value;
-                bool isActive = statusObj != null && statusObj.ToString() == "Active";
+                bool isActive = statusObj != null && statusObj.ToString() == DoctorStatus.Active;
                 e.Value = isActive ? "Deactivate" : "Activate";
                 e.FormattingApplied = true;
             }
@@ -1041,9 +1040,9 @@ namespace HospitalSystem.Views
                 }
 
                 string contact = txtContact.Text.Trim();
-                if (!string.IsNullOrWhiteSpace(contact) && !PhoneRegex.IsMatch(contact))
+                if (!string.IsNullOrWhiteSpace(contact) && !Validation.PhilippineMobile.IsMatch(contact))
                 {
-                    error = "Contact must be a valid PH mobile number, e.g. 09171234567 or +639171234567.";
+                    error = Validation.PhoneMessage;
                     focusTarget = txtContact;
                     return false;
                 }

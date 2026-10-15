@@ -11,7 +11,7 @@ namespace HospitalSystem.Models
         public string Title { get; set; }
         public string Message { get; set; }
         public string Severity { get; set; }   // High, Medium, Low
-        public string Status { get; set; } = "Active"; // Active, Acknowledged, Resolved
+        public string Status { get; set; } = AlertStatus.Active; // Active, Acknowledged, Resolved
         public bool IsAuto { get; set; } = true;
         public DateTime CreatedOn { get; set; }
 
@@ -20,8 +20,8 @@ namespace HospitalSystem.Models
         public string AcknowledgedBy { get; set; }
         public DateTime? ResolvedOn { get; set; }
 
-        public bool IsActive => Status == "Active";
-        public bool IsAcknowledged => Status == "Acknowledged";
+        public bool IsActive => Status == AlertStatus.Active;
+        public bool IsAcknowledged => Status == AlertStatus.Acknowledged;
 
         public int SeverityRank => Severity == "High" ? 0 : Severity == "Medium" ? 1 : 2;
     }

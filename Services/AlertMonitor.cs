@@ -227,7 +227,7 @@ namespace HospitalSystem.Services
 
             var dischargedUnpaid = open
                 .Where(b => b.Balance > 0 && b.AdmissionId.HasValue &&
-                            admissionService.All().Any(a => a.Id == b.AdmissionId.Value && a.Status == "Discharged"))
+                            admissionService.All().Any(a => a.Id == b.AdmissionId.Value && a.Status == AdmissionStatus.Discharged))
                 .ToList();
             if (dischargedUnpaid.Count > 0)
                 yield return new Condition

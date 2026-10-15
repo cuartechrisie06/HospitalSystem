@@ -22,10 +22,10 @@ namespace HospitalSystem.Models
 
         public int DaysStayed => CalculateDaysStayed();
 
-        public bool IsActive => Status == "Active";
+        public bool IsActive => Status == AdmissionStatus.Active;
 
         // On the waiting list: admission requested but no bed is free yet.
-        public bool IsPending => Status == "Pending";
+        public bool IsPending => Status == AdmissionStatus.Pending;
 
         public TimeSpan WaitingTime => (IsPending ? DateTime.Now : AdmittedOn) - RequestedOn;
 
@@ -39,7 +39,7 @@ namespace HospitalSystem.Models
 
             BedId = bedId;
             AdmittedOn = date;
-            Status = "Active";
+            Status = AdmissionStatus.Active;
         }
 
         public void Discharge(DateTime date)
@@ -50,7 +50,7 @@ namespace HospitalSystem.Models
                 throw new InvalidOperationException("Discharge date cannot be earlier than the admission date.");
 
             DischargedOn = date;
-            Status = "Discharged";
+            Status = AdmissionStatus.Discharged;
         }
 
         // A patient who leaves the waiting list before getting a bed (no stay, no bill).
@@ -61,7 +61,7 @@ namespace HospitalSystem.Models
             if (!IsPending)
                 throw new InvalidOperationException("Only a patient on the waiting list can be removed. Admitted patients are discharged instead.");
 
-            Status = "Cancelled";
+            Status = AdmissionStatus.Cancelled;
         }
 
         public int CalculateDaysStayed()

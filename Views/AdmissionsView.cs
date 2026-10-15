@@ -619,7 +619,7 @@ namespace HospitalSystem.Views
             var adm = admissionService.All().FirstOrDefault(a => a.Id == id);
             if (adm == null) return;
 
-            if (adm.Status != "Active")
+            if (adm.Status != AdmissionStatus.Active)
             {
                 MessageBox.Show("This admission is already " + adm.Status.ToLower() + ".", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;

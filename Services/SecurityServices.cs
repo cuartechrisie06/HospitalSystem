@@ -37,15 +37,21 @@ namespace HospitalSystem.Services
         void Demand(Permission permission, string action);
     }
 
-    public class AuthService : IAuthService, IUserSession, IUserDirectory
+    public class AuthService : IAuthService, IUserSession, IUserDirectory, IReloadable
     {
-        private readonly List<User> users;
+        public const int MaxFailedAttempts = 5;
+        public static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(5);
+
+        private readonly IUserRepository repository;
         private readonly IActivityLogger log;
+        private List<User> users;
 
         public AuthService(IUserRepository repository, IActivityLogger log)
         {
-            users = repository.GetAll();
+            this.repository = repository;
             this.log = log;
+            users = repository.GetAll();
+            HashPlainTextPasswords();
         }
 
         public User CurrentUser { get; private set; }
@@ -54,16 +60,52 @@ namespace HospitalSystem.Services
 
         public List<User> All() => users.ToList();
 
+        public void Reload() => users = repository.GetAll();
+
+        // Throws AccountLockedException while the account is locked.
         public User SignIn(string username, string password)
         {
-            var user = users.FirstOrDefault(u =>
-                u.Username.Equals(username, StringComparison.OrdinalIgnoreCase) &&
-                u.Password == password);
+            // Fresh from the database, so a lock or a failed attempt on another workstation counts.
+            var user = repository.Get(username);
 
             if (user == null)
             {
-                log.Log("Security", "Sign-in Failed", $"Failed sign-in attempt for username \"{username}\"", "🔒", username);
+                log.Log("Security", "Sign-in Failed", $"Failed sign-in attempt for unknown username \"{username}\"", "🔒", username);
                 return null;
+            }
+
+            if (user.IsLocked)
+            {
+                log.Log("Security", "Sign-in Blocked", $"Sign-in attempt for locked account \"{user.Username}\"", "🔒", user.Username);
+                throw new AccountLockedException(LockedMessage(user));
+            }
+
+            if (!PasswordHasher.Verify(password, user.Password))
+            {
+                user.FailedAttempts++;
+                bool lockNow = user.FailedAttempts >= MaxFailedAttempts;
+                if (lockNow)
+                {
+                    user.LockedUntil = DateTime.Now.Add(LockoutDuration);
+                    user.FailedAttempts = 0;
+                }
+                repository.UpdateLoginState(user);
+
+                log.Log("Security", "Sign-in Failed", $"Failed sign-in attempt for username \"{user.Username}\"", "🔒", user.Username);
+                if (lockNow)
+                {
+                    log.Log("Security", "Account Locked",
+                        $"{user.Username} locked for {LockoutDuration.TotalMinutes:0} minutes after {MaxFailedAttempts} failed sign-ins", "⛔", user.Username);
+                    throw new AccountLockedException(LockedMessage(user));
+                }
+                return null;
+            }
+
+            if (user.FailedAttempts != 0 || user.LockedUntil.HasValue)
+            {
+                user.FailedAttempts = 0;
+                user.LockedUntil = null;
+                repository.UpdateLoginState(user);
             }
 
             CurrentUser = user;
@@ -76,6 +118,29 @@ namespace HospitalSystem.Services
             if (CurrentUser != null)
                 log.Log("Security", "Signed Out", $"{CurrentUser.DisplayName} signed out", "🚪");
             CurrentUser = null;
+        }
+
+        private static string LockedMessage(User user)
+        {
+            int minutes = Math.Max(1, (int)Math.Ceiling((user.LockedUntil.Value - DateTime.Now).TotalMinutes));
+            return $"Too many failed sign-ins. This account is locked for {minutes} more minute(s).";
+        }
+
+        // Databases from before password hashing (and the seed in schema.sql) hold plain text.
+        // Replace each with its hash the first time the app runs against them.
+        private void HashPlainTextPasswords()
+        {
+            int upgraded = 0;
+            foreach (var user in users.Where(u => !PasswordHasher.IsHashed(u.Password)))
+            {
+                user.Password = PasswordHasher.Hash(user.Password);
+                repository.UpdatePassword(user);
+                upgraded++;
+            }
+
+            if (upgraded > 0)
+                log.Log("Security", "Passwords Hashed", $"Replaced {upgraded} plain-text password(s) with secure hashes", "🔐",
+                    ActivityItem.SystemUser);
         }
     }
 

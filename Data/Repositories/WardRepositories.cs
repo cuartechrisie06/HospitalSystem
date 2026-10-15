@@ -8,7 +8,12 @@ namespace HospitalSystem.Data.Repositories
     public interface IBedRepository
     {
         List<Bed> GetAll();
-        void SetOccupied(int bedId, bool occupied);
+
+        // Marks the bed occupied only if it is still free in the database. False when another
+        // workstation took it first.
+        bool TryOccupy(int bedId);
+
+        void Release(int bedId);
     }
 
     public interface IAdmissionRepository
@@ -21,6 +26,9 @@ namespace HospitalSystem.Data.Repositories
 
         void UpdateDischarge(Admission a);
         void UpdateStatus(Admission a);
+
+        // Admitted or waitlisted right now, checked in the database (another workstation may have added one).
+        bool HasOpenAdmission(int patientId);
     }
 
     public class MySqlBedRepository : IBedRepository
@@ -50,12 +58,21 @@ namespace HospitalSystem.Data.Repositories
             return list;
         }
 
-        public void SetOccupied(int bedId, bool occupied)
+        public bool TryOccupy(int bedId)
         {
             using (var conn = db.OpenConnection())
-            using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=@occupied WHERE id=@id", conn))
+            using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=1 WHERE id=@id AND is_occupied=0", conn))
             {
-                cmd.Parameters.AddWithValue("@occupied", occupied);
+                cmd.Parameters.AddWithValue("@id", bedId);
+                return cmd.ExecuteNonQuery() == 1;
+            }
+        }
+
+        public void Release(int bedId)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand("UPDATE beds SET is_occupied=0 WHERE id=@id", conn))
+            {
                 cmd.Parameters.AddWithValue("@id", bedId);
                 cmd.ExecuteNonQuery();
             }
@@ -152,6 +169,19 @@ namespace HospitalSystem.Data.Repositories
                 cmd.Parameters.AddWithValue("@status", a.Status);
                 cmd.Parameters.AddWithValue("@id", a.Id);
                 cmd.ExecuteNonQuery();
+            }
+        }
+
+        public bool HasOpenAdmission(int patientId)
+        {
+            using (var conn = db.OpenConnection())
+            using (var cmd = new MySqlCommand(
+                "SELECT COUNT(*) FROM admissions WHERE patient_id=@patientId AND status IN (@active, @pending)", conn))
+            {
+                cmd.Parameters.AddWithValue("@patientId", patientId);
+                cmd.Parameters.AddWithValue("@active", AdmissionStatus.Active);
+                cmd.Parameters.AddWithValue("@pending", AdmissionStatus.Pending);
+                return Convert.ToInt32(cmd.ExecuteScalar()) > 0;
             }
         }
     }

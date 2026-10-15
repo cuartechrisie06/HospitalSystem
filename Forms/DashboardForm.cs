@@ -24,6 +24,10 @@ namespace HospitalSystem.Forms
         private Button btnAdmissions;
         private Button btnBilling;
         private Button btnActivityLog;
+        private Button btnReports;
+        private Button btnBackup;
+        private Panel sepReports;
+        private Panel sepBackup;
         private Panel sepProfile;
         private Panel sepNav1;
         private Panel sepNav2;
@@ -117,6 +121,8 @@ namespace HospitalSystem.Forms
 
             btnActivityLog.Visible = permissionGuard.Can(Permission.ViewActivityLog);
             sepActivityLog.Visible = btnActivityLog.Visible;
+            btnBackup.Visible = permissionGuard.Can(Permission.ManageBackups);
+            sepBackup.Visible = btnBackup.Visible;
         }
 
         private void DashboardForm_Load(object sender, EventArgs e)
@@ -126,7 +132,11 @@ namespace HospitalSystem.Forms
             ShowOverview();
         }
 
-        private void BtnDashboard_Click(object sender, EventArgs e) => ShowOverview();
+        private void BtnDashboard_Click(object sender, EventArgs e)
+        {
+            services.Reload();
+            ShowOverview();
+        }
         private void BtnPatients_Click(object sender, EventArgs e) => ShowView(NewPatientsView());
         private void BtnDoctors_Click(object sender, EventArgs e) => ShowView(NewDoctorsView());
         private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(NewAppointmentsView());
@@ -137,6 +147,18 @@ namespace HospitalSystem.Forms
         {
             if (!session.IsAdmin) return;   // the button is hidden for other roles anyway
             ShowView(new ActivityLogView(services.Session, services.Users, services.Log, services.LogReader));
+        }
+
+        private void BtnReports_Click(object sender, EventArgs e)
+        {
+            services.Reload();
+            ShowView(new ReportsView(services.Guard, services.Log, services.Reports));
+        }
+
+        private void BtnBackup_Click(object sender, EventArgs e)
+        {
+            if (!permissionGuard.Can(Permission.ManageBackups)) return;   // the button is hidden for other roles anyway
+            ShowView(new BackupView(services.Backup, services));
         }
 
         // Jump from an alert to the module that raised it.
@@ -152,22 +174,38 @@ namespace HospitalSystem.Forms
             }
         }
 
-        // Each module gets only the services it uses.
-        private PatientsView NewPatientsView() =>
-            new PatientsView(services.Guard, services.Patients, services.Appointments, services.Admissions);
+        // Each module gets only the services it uses, freshly read from the database so changes
+        // made on other workstations since the last screen show up.
+        private PatientsView NewPatientsView()
+        {
+            services.Reload();
+            return new PatientsView(services.Guard, services.Patients, services.Appointments, services.Admissions);
+        }
 
-        private DoctorsView NewDoctorsView() =>
-            new DoctorsView(services.Guard, services.Departments, services.Doctors, services.Appointments);
+        private DoctorsView NewDoctorsView()
+        {
+            services.Reload();
+            return new DoctorsView(services.Guard, services.Departments, services.Doctors, services.Appointments);
+        }
 
-        private AppointmentsView NewAppointmentsView() =>
-            new AppointmentsView(services.Patients, services.Departments, services.Doctors, services.Appointments);
+        private AppointmentsView NewAppointmentsView()
+        {
+            services.Reload();
+            return new AppointmentsView(services.Patients, services.Departments, services.Doctors, services.Appointments);
+        }
 
-        private AdmissionsView NewAdmissionsView() =>
-            new AdmissionsView(services.Patients, services.Doctors, services.Beds, services.Admissions, services.Billing);
+        private AdmissionsView NewAdmissionsView()
+        {
+            services.Reload();
+            return new AdmissionsView(services.Patients, services.Doctors, services.Beds, services.Admissions, services.Billing);
+        }
 
-        private BillingView NewBillingView() =>
-            new BillingView(services.Session, services.Guard, services.Log, services.Patients, services.Beds,
+        private BillingView NewBillingView()
+        {
+            services.Reload();
+            return new BillingView(services.Session, services.Guard, services.Log, services.Patients, services.Beds,
                 services.Appointments, services.Admissions, services.ChargeSchedules, services.Billing);
+        }
 
         // Designer-generated layout. Sidebar, top to bottom: brand (0-60), user profile (60-138),
         // nav buttons every 50px from y=146 (42px button + 8px gap, 1px separator in the gap),
@@ -176,6 +214,10 @@ namespace HospitalSystem.Forms
         {
             this.panelSidebar = new System.Windows.Forms.Panel();
             this.btnActivityLog = new System.Windows.Forms.Button();
+            this.btnReports = new System.Windows.Forms.Button();
+            this.btnBackup = new System.Windows.Forms.Button();
+            this.sepReports = new System.Windows.Forms.Panel();
+            this.sepBackup = new System.Windows.Forms.Panel();
             this.btnBilling = new System.Windows.Forms.Button();
             this.btnAdmissions = new System.Windows.Forms.Button();
             this.btnAppointments = new System.Windows.Forms.Button();
@@ -204,6 +246,10 @@ namespace HospitalSystem.Forms
             // 
             this.panelSidebar.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
             this.panelSidebar.Controls.Add(this.btnActivityLog);
+            this.panelSidebar.Controls.Add(this.btnReports);
+            this.panelSidebar.Controls.Add(this.btnBackup);
+            this.panelSidebar.Controls.Add(this.sepReports);
+            this.panelSidebar.Controls.Add(this.sepBackup);
             this.panelSidebar.Controls.Add(this.btnBilling);
             this.panelSidebar.Controls.Add(this.btnAdmissions);
             this.panelSidebar.Controls.Add(this.btnAppointments);
@@ -236,7 +282,7 @@ namespace HospitalSystem.Forms
             this.btnActivityLog.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnActivityLog.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.btnActivityLog.ForeColor = System.Drawing.Color.White;
-            this.btnActivityLog.Location = new System.Drawing.Point(0, 446);
+            this.btnActivityLog.Location = new System.Drawing.Point(0, 496);
             this.btnActivityLog.Name = "btnActivityLog";
             this.btnActivityLog.Size = new System.Drawing.Size(220, 42);
             this.btnActivityLog.TabIndex = 15;
@@ -244,6 +290,62 @@ namespace HospitalSystem.Forms
             this.btnActivityLog.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             this.btnActivityLog.UseVisualStyleBackColor = false;
             this.btnActivityLog.Click += new System.EventHandler(this.BtnActivityLog_Click);
+            // 
+            // btnReports
+            // 
+            this.btnReports.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnReports.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnReports.FlatAppearance.BorderSize = 0;
+            this.btnReports.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnReports.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnReports.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnReports.ForeColor = System.Drawing.Color.White;
+            this.btnReports.Location = new System.Drawing.Point(0, 446);
+            this.btnReports.Name = "btnReports";
+            this.btnReports.Size = new System.Drawing.Size(220, 42);
+            this.btnReports.TabIndex = 16;
+            this.btnReports.Text = "  Reports";
+            this.btnReports.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnReports.UseVisualStyleBackColor = false;
+            this.btnReports.Click += new System.EventHandler(this.BtnReports_Click);
+            // 
+            // sepReports
+            // 
+            this.sepReports.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepReports.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepReports.Location = new System.Drawing.Point(16, 442);
+            this.sepReports.Name = "sepReports";
+            this.sepReports.Size = new System.Drawing.Size(188, 1);
+            this.sepReports.TabIndex = 17;
+            // 
+            // btnBackup
+            // 
+            this.btnBackup.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(30)))), ((int)(((byte)(58)))), ((int)(((byte)(138)))));
+            this.btnBackup.Cursor = System.Windows.Forms.Cursors.Hand;
+            this.btnBackup.FlatAppearance.BorderSize = 0;
+            this.btnBackup.FlatAppearance.MouseOverBackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
+            this.btnBackup.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
+            this.btnBackup.Font = new System.Drawing.Font("Segoe UI", 10F);
+            this.btnBackup.ForeColor = System.Drawing.Color.White;
+            this.btnBackup.Location = new System.Drawing.Point(0, 546);
+            this.btnBackup.Name = "btnBackup";
+            this.btnBackup.Size = new System.Drawing.Size(220, 42);
+            this.btnBackup.TabIndex = 18;
+            this.btnBackup.Text = "  Backup && Restore";
+            this.btnBackup.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            this.btnBackup.UseVisualStyleBackColor = false;
+            this.btnBackup.Click += new System.EventHandler(this.BtnBackup_Click);
+            // 
+            // sepBackup
+            // 
+            this.sepBackup.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.sepBackup.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
+            this.sepBackup.Location = new System.Drawing.Point(16, 542);
+            this.sepBackup.Name = "sepBackup";
+            this.sepBackup.Size = new System.Drawing.Size(188, 1);
+            this.sepBackup.TabIndex = 19;
             // 
             // btnBilling
             // 
@@ -358,7 +460,7 @@ namespace HospitalSystem.Forms
             this.sepActivityLog.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.sepActivityLog.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
-            this.sepActivityLog.Location = new System.Drawing.Point(16, 442);
+            this.sepActivityLog.Location = new System.Drawing.Point(16, 492);
             this.sepActivityLog.Name = "sepActivityLog";
             this.sepActivityLog.Size = new System.Drawing.Size(188, 1);
             this.sepActivityLog.TabIndex = 14;
@@ -1008,7 +1110,7 @@ namespace HospitalSystem.Forms
         private System.Collections.Generic.List<Appointment> UpcomingAppointments()
         {
             return appointmentService.All()
-                .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != "Cancelled")
+                .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != AppointmentStatus.Cancelled)
                 .OrderBy(a => a.ScheduledOn)
                 .ToList();
         }
@@ -1267,7 +1369,7 @@ namespace HospitalSystem.Forms
             for (int i = 5; i >= 0; i--)
             {
                 var month = DateTime.Today.AddMonths(-i);
-                int count = admissionService.All().Count(a => !a.IsPending && a.Status != "Cancelled" &&
+                int count = admissionService.All().Count(a => !a.IsPending && a.Status != AdmissionStatus.Cancelled &&
                     a.AdmittedOn.Year == month.Year && a.AdmittedOn.Month == month.Month);
                 result[5 - i] = (month.ToString("MMM"), count);
             }
