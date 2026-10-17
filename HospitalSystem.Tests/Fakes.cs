@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using HospitalSystem.Data;
 using HospitalSystem.Data.Repositories;
 using HospitalSystem.Models;
 using HospitalSystem.Services;
@@ -54,19 +55,16 @@ namespace HospitalSystem.Tests
             r.DoctorStore.Insert(new Doctor { FullName = "Mark Lim", DepartmentId = 3, IsOnDuty = true });
             r.DoctorStore.Insert(new Doctor { FullName = "Grace Go", DepartmentId = 4, IsOnDuty = true });
 
-            string[] wards = { "General Ward", "Private", "ICU" };
-            for (int i = 0; i < 6; i++)
-            {
-                r.BedStore.Insert(new Bed { RoomNo = (101 + i).ToString(), BedNo = "1", Ward = wards[i % 3] });
-                r.BedStore.Insert(new Bed { RoomNo = (101 + i).ToString(), BedNo = "2", Ward = wards[i % 3] });
-            }
+            foreach (var bed in BedLayout.Beds)   // bed ids 1-16, same as schema.sql
+                r.BedStore.Insert(new Bed { RoomNo = bed.Room, BedNo = bed.Bed, Ward = bed.Ward });
 
             r.PatientStore.Insert(new Patient { FullName = "Juan Dela Cruz", Birthdate = DateTime.Today.AddYears(-45), Gender = "Male", Contact = "09171234567", RegisteredOn = DateTime.Today });
             r.PatientStore.Insert(new Patient { FullName = "Maria Santos", Birthdate = DateTime.Today.AddYears(-70), Gender = "Female", Contact = "09189876543", RegisteredOn = DateTime.Today });
             r.PatientStore.Insert(new Patient { FullName = "Pedro Ramirez", Birthdate = DateTime.Today.AddYears(-28), Gender = "Male", Contact = "09221234567", RegisteredOn = DateTime.Today });
 
             r.ChargeStore.Insert(new ChargeSchedule { Description = "Admission fee", Category = BillCategory.Other, UnitPrice = 500m });
-            r.ChargeStore.Insert(new ChargeSchedule { Description = "Room - General Ward", Category = BillCategory.Room, UnitPrice = 1500m, Ward = "General Ward", PerDay = true });
+            r.ChargeStore.Insert(new ChargeSchedule { Description = "Room - Ward", Category = BillCategory.Room, UnitPrice = BedLayout.WardRate, Ward = BedLayout.Ward, PerDay = true });
+            r.ChargeStore.Insert(new ChargeSchedule { Description = "Room - Semi-Private", Category = BillCategory.Room, UnitPrice = BedLayout.SemiPrivateRate, Ward = BedLayout.SemiPrivate, PerDay = true });
             r.ChargeStore.Insert(new ChargeSchedule { Description = "Room - ICU", Category = BillCategory.Room, UnitPrice = 8000m, Ward = "ICU", PerDay = true });
             return r;
         }

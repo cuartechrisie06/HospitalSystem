@@ -34,8 +34,12 @@ namespace HospitalSystem.Services
         // Upgrades the schema, loads everything from MySQL and wires the services together.
         public static AppServices Create(IDbConnectionFactory db)
         {
-            int retiredAlerts = new SchemaMigrator(db).Migrate();
-            return Create(new MySqlRepositorySet(db), retiredAlerts);
+            var migrator = new SchemaMigrator(db);
+            int retiredAlerts = migrator.Migrate();
+            var app = Create(new MySqlRepositorySet(db), retiredAlerts);
+            foreach (var note in migrator.Notes)
+                app.Log.Log("Maintenance", "Upgrade", note, "🛠", ActivityItem.SystemUser);
+            return app;
         }
 
         // Wires the services together over any set of repositories (MySQL in the app, fakes in the tests).

@@ -142,11 +142,11 @@ namespace HospitalSystem.Tests
             var a = app.Admissions.Add(new Admission { PatientId = 1, DoctorId = 1, BedId = 1, Diagnosis = "Fever" });
             Assert.AreEqual(AdmissionStatus.Active, a.Status);
             Assert.IsTrue(repos.BedStore.Table.Get(1).IsOccupied);
-            Assert.AreEqual(11, app.Beds.Available().Count);
+            Assert.AreEqual(app.Beds.TotalCount() - 1, app.Beds.Available().Count);
 
             app.Admissions.Discharge(a);
             Assert.IsFalse(repos.BedStore.Table.Get(1).IsOccupied);
-            Assert.AreEqual(12, app.Beds.Available().Count);
+            Assert.AreEqual(app.Beds.TotalCount(), app.Beds.Available().Count);
         }
 
         [TestMethod]

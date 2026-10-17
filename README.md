@@ -82,7 +82,11 @@ Open the **XAMPP Control Panel** and click **Start** next to **MySQL**.
 ### 3. Create the database
 
 Import `Data/schema.sql`. It creates the `hospital_system` database, all 12 tables, and the seed data
-(2 users, 4 departments, 5 doctors, 12 beds, 3 patients).
+(2 users, 4 departments, 5 doctors, 16 beds, 3 patients).
+
+Rooms: 2 private rooms (1 bed each), 2 semi-private rooms (2 beds), 2 wards (3 beds) and 2 ICU rooms (2 beds).
+A database created before this layout is moved onto it automatically when the app starts with no patient in a bed
+("General Ward" becomes "Ward", and a semi-private room charge is added to the charge schedule).
 
 Using the command line:
 

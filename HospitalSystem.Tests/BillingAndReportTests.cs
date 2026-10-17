@@ -17,9 +17,9 @@ namespace HospitalSystem.Tests
         public void AdmissionBillUsesTheScheduleForTheWard()
         {
             var app = TestApp.Start(out _);
-            var bill = app.Billing.EnsureAdmissionBill(Admit(app, 1, 1));   // bed 1: General Ward
+            var bill = app.Billing.EnsureAdmissionBill(Admit(app, 1, 7));   // bed 7: Ward
 
-            CollectionAssert.AreEquivalent(new[] { "Admission fee", "Room - General Ward" }, bill.Items.Select(i => i.Description).ToArray());
+            CollectionAssert.AreEquivalent(new[] { "Admission fee", "Room - Ward" }, bill.Items.Select(i => i.Description).ToArray());
             Assert.AreEqual(BillingRates.DefaultVatRate, bill.Adjustments.VatRate);
             Assert.AreEqual(BillStatus.Unpaid, bill.Status);
         }
@@ -28,11 +28,33 @@ namespace HospitalSystem.Tests
         public void IcuBedGetsTheIcuRateAndAdmittingNeverDoubleBills()
         {
             var app = TestApp.Start(out _);
-            var admission = Admit(app, 1, 5);   // bed 5: ICU
+            var admission = Admit(app, 1, 13);   // bed 13: ICU
             var bill = app.Billing.EnsureAdmissionBill(admission);
             Assert.IsTrue(bill.Items.Any(i => i.Description == "Room - ICU"));
             Assert.AreSame(bill, app.Billing.EnsureAdmissionBill(admission));
             Assert.AreEqual(1, app.Billing.All().Count);
+        }
+
+        [TestMethod]
+        public void SemiPrivateBedGetsTheSemiPrivateRate()
+        {
+            var app = TestApp.Start(out _);
+            var bill = app.Billing.EnsureAdmissionBill(Admit(app, 1, 3));   // bed 3: Semi-Private
+            var room = bill.Items.Single(i => i.Category == BillCategory.Room);
+            Assert.AreEqual(BedLayout.SemiPrivateRate, room.UnitPrice);
+        }
+
+        [TestMethod]
+        public void LayoutHasTheAgreedRooms()
+        {
+            var app = TestApp.Start(out _);
+            var beds = app.Beds.All();
+            Assert.AreEqual(16, beds.Count);
+            Func<string, int[]> bedsPerRoom = ward => beds.Where(b => b.Ward == ward).GroupBy(b => b.RoomNo).Select(g => g.Count()).ToArray();
+            CollectionAssert.AreEqual(new[] { 1, 1 }, bedsPerRoom(BedLayout.Private));
+            CollectionAssert.AreEqual(new[] { 2, 2 }, bedsPerRoom(BedLayout.SemiPrivate));
+            CollectionAssert.AreEqual(new[] { 3, 3 }, bedsPerRoom(BedLayout.Ward));
+            CollectionAssert.AreEqual(new[] { 2, 2 }, bedsPerRoom(BedLayout.Icu));
         }
 
         [TestMethod]
@@ -62,7 +84,7 @@ namespace HospitalSystem.Tests
         public void PaymentReducesTheBalanceAndIsCreditedToTheCashier()
         {
             var app = TestApp.Start(out _);
-            var bill = app.Billing.EnsureAdmissionBill(Admit(app, 1, 1));
+            var bill = app.Billing.EnsureAdmissionBill(Admit(app, 1, 7));   // Ward
             decimal due = bill.Balance;
 
             var payment = new Payment { BillId = bill.Id, Amount = 1000m, Method = PaymentMethod.Cash, AmountTendered = 1000m };
@@ -149,7 +171,7 @@ namespace HospitalSystem.Tests
         public void FillingEveryBedRaisesAnAlertThatClearsAfterADischarge()
         {
             var app = TestApp.Start(out var repos);
-            for (int i = 1; i <= 12; i++)
+            for (int i = 1; i <= 16; i++)
             {
                 if (i > 3)
                     app.Patients.Add(new Patient { FullName = "P" + i, Birthdate = DateTime.Today.AddYears(-30), Gender = "Male", Contact = "09170000000" });

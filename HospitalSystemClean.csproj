@@ -121,6 +121,7 @@
     <Compile Include="Data\Db.cs" />
     <Compile Include="Data\DesignTimeHelper.cs" />
     <Compile Include="Data\SchemaMigrator.cs" />
+    <Compile Include="Data\BedLayout.cs" />
     <Compile Include="Data\Repositories\StaffRepositories.cs" />
     <Compile Include="Data\Repositories\PatientRepository.cs" />
     <Compile Include="Data\Repositories\WardRepositories.cs" />

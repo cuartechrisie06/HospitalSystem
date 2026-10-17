@@ -215,20 +215,25 @@ INSERT INTO doctors (id, full_name, department_id, specialization, is_on_duty) V
     (5, 'Grace Lim', 4, 'Cardiology', 0)
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
 
--- 12 beds across 6 rooms (101-106), alternating ward, mirrors the C# seed loop
+-- 16 beds in 8 rooms, mirrors Data/BedLayout.cs:
+-- 2 private rooms (1 bed), 2 semi-private rooms (2 beds), 2 wards (3 beds), 2 ICU rooms (2 beds)
 INSERT INTO beds (id, room_no, bed_no, ward, is_occupied) VALUES
-    (1,  '101', '1', 'General Ward', 0),
-    (2,  '101', '2', 'General Ward', 0),
-    (3,  '102', '1', 'Private',      0),
-    (4,  '102', '2', 'Private',      0),
-    (5,  '103', '1', 'ICU',          0),
-    (6,  '103', '2', 'ICU',          0),
-    (7,  '104', '1', 'General Ward', 0),
-    (8,  '104', '2', 'General Ward', 0),
-    (9,  '105', '1', 'Private',      0),
-    (10, '105', '2', 'Private',      0),
-    (11, '106', '1', 'ICU',          0),
-    (12, '106', '2', 'ICU',          0)
+    (1,  '101', '1', 'Private',      0),
+    (2,  '102', '1', 'Private',      0),
+    (3,  '103', '1', 'Semi-Private', 0),
+    (4,  '103', '2', 'Semi-Private', 0),
+    (5,  '104', '1', 'Semi-Private', 0),
+    (6,  '104', '2', 'Semi-Private', 0),
+    (7,  '105', '1', 'Ward',         0),
+    (8,  '105', '2', 'Ward',         0),
+    (9,  '105', '3', 'Ward',         0),
+    (10, '106', '1', 'Ward',         0),
+    (11, '106', '2', 'Ward',         0),
+    (12, '106', '3', 'Ward',         0),
+    (13, '107', '1', 'ICU',          0),
+    (14, '107', '2', 'ICU',          0),
+    (15, '108', '1', 'ICU',          0),
+    (16, '108', '2', 'ICU',          0)
 ON DUPLICATE KEY UPDATE room_no = VALUES(room_no);
 
 INSERT INTO patients (id, full_name, age, birthdate, gender, contact, address, blood_type, registered_on) VALUES
@@ -240,12 +245,13 @@ ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
 -- Default admission charges, mirrors SchemaMigrator
 INSERT INTO charge_schedules (id, description, category, unit_price, ward, per_day, is_active) VALUES
     (1, 'Admission fee',                            'Other',     500.00,  NULL,           0, 1),
-    (2, 'Room charge - General Ward',               'Room',      1500.00, 'General Ward', 1, 1),
+    (2, 'Room charge - Ward',                       'Room',      1500.00, 'Ward',         1, 1),
     (3, 'Room charge - Private',                    'Room',      3000.00, 'Private',      1, 1),
     (4, 'Room charge - ICU',                        'Room',      8000.00, 'ICU',          1, 1),
     (5, 'Nursing care',                             'Other',     350.00,  NULL,           1, 1),
     (6, 'ICU monitoring',                           'Procedure', 2000.00, 'ICU',          1, 1),
-    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1)
+    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1),
+    (8, 'Room charge - Semi-Private',               'Room',      2250.00, 'Semi-Private', 1, 1)
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- No seeded alerts: the app raises them itself from the data above (e.g. Pediatrics and

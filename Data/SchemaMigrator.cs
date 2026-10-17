@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using MySql.Data.MySqlClient;
 using HospitalSystem.Models;
 
@@ -16,6 +18,9 @@ namespace HospitalSystem.Data
             this.db = db;
         }
 
+        // Messages about what the upgrade did (or couldn't do yet), for the activity log.
+        public List<string> Notes { get; } = new List<string>();
+
         // Returns how many old manually posted alerts were closed, so the caller can log it.
         public int Migrate()
         {
@@ -27,6 +32,7 @@ namespace HospitalSystem.Data
                 EnsureSecurityColumns(conn);
                 EnsurePatientColumns(conn);
                 EnsureIndexes(conn);
+                EnsureBedLayout(conn);
                 return retired;
             }
         }
@@ -179,7 +185,8 @@ namespace HospitalSystem.Data
                     using (var seed = new MySqlCommand(
                         "INSERT INTO charge_schedules (description, category, unit_price, ward, per_day, is_active) VALUES " +
                         "('Admission fee', 'Other', 500.00, NULL, 0, 1)," +
-                        "('Room charge - General Ward', 'Room', 1500.00, 'General Ward', 1, 1)," +
+                        "('Room charge - Ward', 'Room', 1500.00, 'Ward', 1, 1)," +
+                        "('Room charge - Semi-Private', 'Room', 2250.00, 'Semi-Private', 1, 1)," +
                         "('Room charge - Private', 'Room', 3000.00, 'Private', 1, 1)," +
                         "('Room charge - ICU', 'Room', 8000.00, 'ICU', 1, 1)," +
                         "('Nursing care', 'Other', 350.00, NULL, 1, 1)," +
@@ -231,6 +238,90 @@ namespace HospitalSystem.Data
             AddColumnIfMissing(conn, "patients", "deactivation_notes", "deactivation_notes VARCHAR(500) NULL");
             AddColumnIfMissing(conn, "patients", "reactivated_at", "reactivated_at DATETIME NULL");
             AddColumnIfMissing(conn, "patients", "reactivated_by", "reactivated_by VARCHAR(100) NULL");
+        }
+
+        // Moves a database still on the old layout (6 rooms of 2 beds: General Ward / Private / ICU) to
+        // BedLayout, and renames the General Ward room charge and adds the semi-private one to match.
+        // Beds are rearranged in place so past admissions keep their bed. A patient in a bed would end up
+        // labelled with a different room, so this waits until no bed is occupied.
+        private void EnsureBedLayout(MySqlConnection conn)
+        {
+            if (Count(conn, "SELECT COUNT(*) FROM beds WHERE ward='" + BedLayout.SemiPrivate + "'") > 0)
+                return;   // already on the new layout
+
+            if (Count(conn, "SELECT COUNT(*) FROM beds WHERE is_occupied=1") > 0 ||
+                Count(conn, "SELECT COUNT(*) FROM admissions WHERE status='Active'") > 0)
+            {
+                Notes.Add("Room layout update (private / semi-private / ward / ICU) is waiting: it is applied " +
+                          "automatically the next time the app starts with no patient in a bed.");
+                return;
+            }
+
+            var existing = new List<int>();
+            using (var cmd = new MySqlCommand("SELECT id FROM beds ORDER BY id", conn))
+            using (var r = cmd.ExecuteReader())
+                while (r.Read()) existing.Add(r.GetInt32(0));
+
+            using (var tx = conn.BeginTransaction())
+            {
+                for (int i = 0; i < BedLayout.Beds.Length; i++)
+                {
+                    var bed = BedLayout.Beds[i];
+                    string sql = i < existing.Count
+                        ? "UPDATE beds SET room_no=@room, bed_no=@bed, ward=@ward, is_occupied=0 WHERE id=@id"
+                        : "INSERT INTO beds (room_no, bed_no, ward, is_occupied) VALUES (@room, @bed, @ward, 0)";
+                    using (var cmd = new MySqlCommand(sql, conn, tx))
+                    {
+                        cmd.Parameters.AddWithValue("@room", bed.Room);
+                        cmd.Parameters.AddWithValue("@bed", bed.Bed);
+                        cmd.Parameters.AddWithValue("@ward", bed.Ward);
+                        if (i < existing.Count) cmd.Parameters.AddWithValue("@id", existing[i]);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                // Extra beds beyond the layout: remove the ones no admission ever used.
+                foreach (int id in existing.Skip(BedLayout.Beds.Length))
+                {
+                    using (var cmd = new MySqlCommand(
+                        "DELETE FROM beds WHERE id=@id AND NOT EXISTS (SELECT 1 FROM admissions WHERE bed_id=@id)", conn, tx))
+                    {
+                        cmd.Parameters.AddWithValue("@id", id);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                Exec(conn, tx, "UPDATE charge_schedules SET ward='" + BedLayout.Ward + "' WHERE ward='General Ward'");
+                Exec(conn, tx, "UPDATE charge_schedules SET description='Room charge - Ward' WHERE description='Room charge - General Ward'");
+                if (Count(conn, "SELECT COUNT(*) FROM charge_schedules WHERE ward='" + BedLayout.SemiPrivate + "'", tx) == 0)
+                {
+                    using (var cmd = new MySqlCommand(
+                        "INSERT INTO charge_schedules (description, category, unit_price, ward, per_day, is_active) " +
+                        "VALUES ('Room charge - Semi-Private', 'Room', @rate, @ward, 1, 1)", conn, tx))
+                    {
+                        cmd.Parameters.AddWithValue("@rate", BedLayout.SemiPrivateRate);
+                        cmd.Parameters.AddWithValue("@ward", BedLayout.SemiPrivate);
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+
+                tx.Commit();
+            }
+
+            Notes.Add($"Rooms updated: 2 private (1 bed), 2 semi-private (2 beds), 2 wards (3 beds) and 2 ICU rooms (2 beds), " +
+                      $"{BedLayout.Beds.Length} beds in all. 'General Ward' is now 'Ward'; a semi-private room charge was added.");
+        }
+
+        private static long Count(MySqlConnection conn, string sql, MySqlTransaction tx = null)
+        {
+            using (var cmd = new MySqlCommand(sql, conn, tx))
+                return Convert.ToInt64(cmd.ExecuteScalar());
+        }
+
+        private static void Exec(MySqlConnection conn, MySqlTransaction tx, string sql)
+        {
+            using (var cmd = new MySqlCommand(sql, conn, tx))
+                cmd.ExecuteNonQuery();
         }
 
         // Lookups the app runs often. Foreign key columns are already indexed by InnoDB.
