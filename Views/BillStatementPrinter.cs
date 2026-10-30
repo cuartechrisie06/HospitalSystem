@@ -5,6 +5,7 @@ using System.Drawing.Printing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -32,8 +33,20 @@ namespace HospitalSystem.Views
         private int nextRow;
         private int pageNo;
 
-        public BillStatementPrinter(Bill bill)
+        private readonly IUserSession session;
+        private readonly IActivityLogger activityLog;
+        private readonly IPatientService patientService;
+        private readonly IBedService bedService;
+        private readonly IAdmissionService admissionService;
+
+        public BillStatementPrinter(IUserSession session, IActivityLogger activityLog,
+            IPatientService patientService, IBedService bedService, IAdmissionService admissionService, Bill bill)
         {
+            this.session = session;
+            this.activityLog = activityLog;
+            this.patientService = patientService;
+            this.bedService = bedService;
+            this.admissionService = admissionService;
             this.bill = bill;
             rows = BuildRows();
             document.DocumentName = "Statement " + bill.BillNo;
@@ -43,8 +56,8 @@ namespace HospitalSystem.Views
             document.EndPrint += (s, e) =>
             {
                 if (e.PrintAction == PrintAction.PrintToPrinter && !e.Cancel)
-                    HospitalData.LogActivity("Billing", "Statement Printed",
-                        $"Printed statement of account for {bill.BillNo} ({HospitalData.PatientName(bill.PatientId)}, {pageNo} page(s))", "🖨");
+                    activityLog.Log("Billing", "Statement Printed",
+                        $"Printed statement of account for {bill.BillNo} ({patientService.NameOf(bill.PatientId)}, {pageNo} page(s))", "🖨");
             };
         }
 
@@ -64,17 +77,17 @@ namespace HospitalSystem.Views
         private List<Row> BuildRows()
         {
             var list = new List<Row>();
-            var patient = HospitalData.GetPatient(bill.PatientId);
+            var patient = patientService.Get(bill.PatientId);
 
             list.Add(new Row { Style = RowStyle.Title, Text = "STATEMENT OF ACCOUNT" });
             list.Add(new Row { Style = RowStyle.Info, Text = "Bill No.: " + bill.BillNo + "        Date: " + bill.BillDate.ToString("yyyy-MM-dd") + "        Status: " + bill.Status });
-            list.Add(new Row { Style = RowStyle.Info, Text = "Patient: " + HospitalData.PatientName(bill.PatientId) +
+            list.Add(new Row { Style = RowStyle.Info, Text = "Patient: " + patientService.NameOf(bill.PatientId) +
                 (patient != null ? "  (" + patient.PatientNo + ")" : "") });
             if (bill.AdmissionId.HasValue)
             {
-                var adm = HospitalData.Admissions.FirstOrDefault(a => a.Id == bill.AdmissionId.Value);
+                var adm = admissionService.All().FirstOrDefault(a => a.Id == bill.AdmissionId.Value);
                 if (adm != null)
-                    list.Add(new Row { Style = RowStyle.Info, Text = "Admission: " + adm.AdmissionNo + "  " + HospitalData.BedLabel(adm.BedId) +
+                    list.Add(new Row { Style = RowStyle.Info, Text = "Admission: " + adm.AdmissionNo + "  " + bedService.Label(adm.BedId) +
                         "  Admitted " + adm.AdmittedOn.ToString("yyyy-MM-dd") +
                         (adm.DischargedOn.HasValue ? ", discharged " + adm.DischargedOn.Value.ToString("yyyy-MM-dd") : "") +
                         "  (" + adm.DaysStayed + " day(s))" });
@@ -130,7 +143,7 @@ namespace HospitalSystem.Views
 
             list.Add(new Row { Style = RowStyle.Spacer });
             list.Add(new Row { Style = RowStyle.Info, Text = "Printed " + DateTime.Now.ToString("yyyy-MM-dd HH:mm") +
-                (HospitalData.CurrentUser != null ? " by " + HospitalData.CurrentUser.DisplayName : "") });
+                (session.CurrentUser != null ? " by " + session.CurrentUser.DisplayName : "") });
             return list;
         }
 

@@ -5,10 +5,12 @@ CREATE DATABASE IF NOT EXISTS hospital_system CHARACTER SET utf8mb4;
 USE hospital_system;
 
 CREATE TABLE IF NOT EXISTS users (
-    username     VARCHAR(50) PRIMARY KEY,
-    password     VARCHAR(100) NOT NULL,
-    display_name VARCHAR(100),
-    role         VARCHAR(50)
+    username        VARCHAR(50) PRIMARY KEY,
+    password        VARCHAR(255) NOT NULL,      -- PBKDF2 hash; the seeded plain text below is hashed on first run
+    display_name    VARCHAR(100),
+    role            VARCHAR(50),
+    failed_attempts INT NOT NULL DEFAULT 0,
+    locked_until    DATETIME NULL               -- set after too many failed sign-ins
 );
 
 CREATE TABLE IF NOT EXISTS departments (
@@ -39,7 +41,14 @@ CREATE TABLE IF NOT EXISTS patients (
     address        VARCHAR(255),
     blood_type     VARCHAR(10),
     status         VARCHAR(20) NOT NULL DEFAULT 'Active',
-    registered_on  DATETIME NOT NULL
+    registered_on  DATETIME NOT NULL,
+    birthdate      DATE NULL,
+    deactivated_at      DATETIME NULL,
+    deactivated_by      VARCHAR(100) NULL,
+    deactivation_reason VARCHAR(255) NULL,
+    deactivation_notes  VARCHAR(500) NULL,
+    reactivated_at      DATETIME NULL,
+    reactivated_by      VARCHAR(100) NULL
 );
 
 CREATE TABLE IF NOT EXISTS beds (
@@ -90,7 +99,8 @@ CREATE TABLE IF NOT EXISTS alerts (
     source_key      VARCHAR(100) NULL,     -- triggering condition, e.g. 'STAFF:3'
     module          VARCHAR(50) NULL,      -- module that raised it
     acknowledged_by VARCHAR(100) NULL,
-    resolved_on     DATETIME NULL
+    resolved_on     DATETIME NULL,
+    INDEX ix_alerts_status (status)
 );
 
 -- Audit trail of every action; visible to administrators only.
@@ -101,10 +111,13 @@ CREATE TABLE IF NOT EXISTS activity_log (
     description VARCHAR(255) NOT NULL,
     icon        VARCHAR(10) NOT NULL DEFAULT '',
     created_at  DATETIME NOT NULL,
-    username    VARCHAR(50) NULL           -- who did it; 'System' for automatic actions
+    username    VARCHAR(50) NULL,          -- who did it; 'System' for automatic actions
+    INDEX ix_activity_created (created_at),
+    INDEX ix_activity_module (module),
+    INDEX ix_activity_username (username)
 );
 
--- Billing. The app also creates these on startup (HospitalData.EnsureBillingTables),
+-- Billing. The app also creates these on startup (SchemaMigrator),
 -- so an existing database does not need to be re-imported.
 CREATE TABLE IF NOT EXISTS bills (
     id              INT PRIMARY KEY AUTO_INCREMENT,
@@ -202,37 +215,43 @@ INSERT INTO doctors (id, full_name, department_id, specialization, is_on_duty) V
     (5, 'Grace Lim', 4, 'Cardiology', 0)
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
 
--- 12 beds across 6 rooms (101-106), alternating ward, mirrors the C# seed loop
+-- 16 beds in 8 rooms, mirrors Data/BedLayout.cs:
+-- 2 private rooms (1 bed), 2 semi-private rooms (2 beds), 2 wards (3 beds), 2 ICU rooms (2 beds)
 INSERT INTO beds (id, room_no, bed_no, ward, is_occupied) VALUES
-    (1,  '101', '1', 'General Ward', 0),
-    (2,  '101', '2', 'General Ward', 0),
-    (3,  '102', '1', 'Private',      0),
-    (4,  '102', '2', 'Private',      0),
-    (5,  '103', '1', 'ICU',          0),
-    (6,  '103', '2', 'ICU',          0),
-    (7,  '104', '1', 'General Ward', 0),
-    (8,  '104', '2', 'General Ward', 0),
-    (9,  '105', '1', 'Private',      0),
-    (10, '105', '2', 'Private',      0),
-    (11, '106', '1', 'ICU',          0),
-    (12, '106', '2', 'ICU',          0)
+    (1,  '101', '1', 'Private',      0),
+    (2,  '102', '1', 'Private',      0),
+    (3,  '103', '1', 'Semi-Private', 0),
+    (4,  '103', '2', 'Semi-Private', 0),
+    (5,  '104', '1', 'Semi-Private', 0),
+    (6,  '104', '2', 'Semi-Private', 0),
+    (7,  '105', '1', 'Ward',         0),
+    (8,  '105', '2', 'Ward',         0),
+    (9,  '105', '3', 'Ward',         0),
+    (10, '106', '1', 'Ward',         0),
+    (11, '106', '2', 'Ward',         0),
+    (12, '106', '3', 'Ward',         0),
+    (13, '107', '1', 'ICU',          0),
+    (14, '107', '2', 'ICU',          0),
+    (15, '108', '1', 'ICU',          0),
+    (16, '108', '2', 'ICU',          0)
 ON DUPLICATE KEY UPDATE room_no = VALUES(room_no);
 
-INSERT INTO patients (id, full_name, age, gender, contact, address, blood_type, registered_on) VALUES
-    (1, 'Juan Dela Cruz', 45, 'Male',   '09171234567', 'Quezon City', 'O+', DATE_SUB(CURDATE(), INTERVAL 10 DAY)),
-    (2, 'Maria Santos',   32, 'Female', '09189876543', 'Makati City', 'A+', DATE_SUB(CURDATE(), INTERVAL 5 DAY)),
-    (3, 'Pedro Ramirez',  28, 'Male',   '09221234567', 'Pasig City',  'B+', DATE_SUB(CURDATE(), INTERVAL 2 DAY))
+INSERT INTO patients (id, full_name, age, birthdate, gender, contact, address, blood_type, registered_on) VALUES
+    (1, 'Juan Dela Cruz', 45, DATE_SUB(CURDATE(), INTERVAL 45 YEAR), 'Male',   '09171234567', 'Quezon City', 'O+', DATE_SUB(CURDATE(), INTERVAL 10 DAY)),
+    (2, 'Maria Santos',   32, DATE_SUB(CURDATE(), INTERVAL 32 YEAR), 'Female', '09189876543', 'Makati City', 'A+', DATE_SUB(CURDATE(), INTERVAL 5 DAY)),
+    (3, 'Pedro Ramirez',  28, DATE_SUB(CURDATE(), INTERVAL 28 YEAR), 'Male',   '09221234567', 'Pasig City',  'B+', DATE_SUB(CURDATE(), INTERVAL 2 DAY))
 ON DUPLICATE KEY UPDATE full_name = VALUES(full_name);
 
--- Default admission charges, mirrors HospitalData.EnsureBillingTables
+-- Default admission charges, mirrors SchemaMigrator
 INSERT INTO charge_schedules (id, description, category, unit_price, ward, per_day, is_active) VALUES
     (1, 'Admission fee',                            'Other',     500.00,  NULL,           0, 1),
-    (2, 'Room charge - General Ward',               'Room',      1500.00, 'General Ward', 1, 1),
+    (2, 'Room charge - Ward',                       'Room',      1500.00, 'Ward',         1, 1),
     (3, 'Room charge - Private',                    'Room',      3000.00, 'Private',      1, 1),
     (4, 'Room charge - ICU',                        'Room',      8000.00, 'ICU',          1, 1),
     (5, 'Nursing care',                             'Other',     350.00,  NULL,           1, 1),
     (6, 'ICU monitoring',                           'Procedure', 2000.00, 'ICU',          1, 1),
-    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1)
+    (7, 'Basic laboratory panel (CBC, urinalysis)', 'Laboratory', 750.00, NULL,           0, 1),
+    (8, 'Room charge - Semi-Private',               'Room',      2250.00, 'Semi-Private', 1, 1)
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- No seeded alerts: the app raises them itself from the data above (e.g. Pediatrics and

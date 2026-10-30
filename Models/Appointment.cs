@@ -17,9 +17,9 @@ namespace HospitalSystem.Models
             get { return "A-" + Id.ToString("D4"); }
         }
 
-        public bool IsOpen => Status == "Pending" || Status == "Confirmed";
+        public bool IsOpen => Status == AppointmentStatus.Pending || Status == AppointmentStatus.Confirmed;
 
-        // These only change the object; HospitalData persists the change.
+        // These only change the object; AppointmentService persists the change.
         public void Reschedule(DateTime newDate)
         {
             if (!IsOpen)
@@ -35,15 +35,15 @@ namespace HospitalSystem.Models
             if (!IsOpen)
                 throw new InvalidOperationException("Only Pending or Confirmed appointments can be cancelled.");
 
-            Status = "Cancelled";
+            Status = AppointmentStatus.Cancelled;
         }
 
         public void MarkAsCompleted()
         {
-            if (Status != "Confirmed")
+            if (Status != AppointmentStatus.Confirmed)
                 throw new InvalidOperationException("Only Confirmed appointments can be marked as completed.");
 
-            Status = "Completed";
+            Status = AppointmentStatus.Completed;
         }
 
         public override string ToString()

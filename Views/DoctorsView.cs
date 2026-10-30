@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -11,7 +12,6 @@ namespace HospitalSystem.Views
     public class DoctorsView : UserControl
     {
         // Philippine mobile format: 09171234567 or +639171234567
-        private static readonly Regex PhoneRegex = new Regex(@"^(09\d{9}|\+639\d{9})$");
         private const string SearchPlaceholder = "Search doctors by ID, name, specialization...";
 
         private DataGridView grid;
@@ -35,25 +35,35 @@ namespace HospitalSystem.Views
         private Label lblCount;
         private bool searchPlaceholderActive = true;
 
+        private readonly IPermissionGuard permissionGuard;
+        private readonly IDepartmentService departmentService;
+        private readonly IDoctorService doctorService;
+        private readonly IAppointmentService appointmentService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public DoctorsView()
         {
             // Every control, grid column and event is set up in InitializeComponent()
             // (Designer format), so the Designer shows the complete screen.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                ApplyPermissions();
-                LoadDoctors("");
-            }
+        public DoctorsView(IPermissionGuard permissionGuard, IDepartmentService departmentService,
+            IDoctorService doctorService, IAppointmentService appointmentService) : this()
+        {
+            this.permissionGuard = permissionGuard;
+            this.departmentService = departmentService;
+            this.doctorService = doctorService;
+            this.appointmentService = appointmentService;
+
+            ApplyPermissions();
+            LoadDoctors("");
         }
 
         // Doctor records are maintained by administrators; nurses get a read-only list.
         private void ApplyPermissions()
         {
-            bool manage = Permissions.Can(Permission.ManageDoctors);
+            bool manage = permissionGuard.Can(Permission.ManageDoctors);
             btnNew.Visible = manage;
             colEdit.Visible = manage;
             colAction.Visible = manage;
@@ -354,7 +364,7 @@ namespace HospitalSystem.Views
 
             if (colName == "colStatus" && e.Value != null)
             {
-                e.CellStyle.ForeColor = e.Value.ToString() == "Active"
+                e.CellStyle.ForeColor = e.Value.ToString() == DoctorStatus.Active
                     ? Color.FromArgb(5, 150, 105)
                     : Color.FromArgb(156, 163, 175);
                 e.CellStyle.Font = new Font("Segoe UI", 9F, FontStyle.Bold);
@@ -366,7 +376,7 @@ namespace HospitalSystem.Views
             if (colName == "colAction")
             {
                 var statusObj = grid.Rows[e.RowIndex].Cells["colStatus"].Value;
-                bool isActive = statusObj != null && statusObj.ToString() == "Active";
+                bool isActive = statusObj != null && statusObj.ToString() == DoctorStatus.Active;
                 e.Value = isActive ? "Deactivate" : "Activate";
                 e.FormattingApplied = true;
             }
@@ -412,7 +422,7 @@ namespace HospitalSystem.Views
         private void LoadDoctors(string filter)
         {
             bool showInactive = chkShowInactive != null && chkShowInactive.Checked;
-            var visible = showInactive ? HospitalData.AllDoctors() : HospitalData.ActiveDoctors();
+            var visible = showInactive ? doctorService.All() : doctorService.Active();
             var source = visible.AsEnumerable();
             if (!string.IsNullOrWhiteSpace(filter))
             {
@@ -421,7 +431,7 @@ namespace HospitalSystem.Views
                     d.FullName.ToLower().Contains(f) ||
                     d.DoctorNo.ToLower().Contains(f) ||
                     (d.Specialization != null && d.Specialization.ToLower().Contains(f)) ||
-                    HospitalData.DepartmentName(d.DepartmentId).ToLower().Contains(f) ||
+                    departmentService.NameOf(d.DepartmentId).ToLower().Contains(f) ||
                     (d.Contact != null && d.Contact.Contains(f)));
             }
 
@@ -433,7 +443,7 @@ namespace HospitalSystem.Views
                     No = d.DoctorNo,
                     Name = d.FullName,
                     d.Specialization,
-                    Department = HospitalData.DepartmentName(d.DepartmentId),
+                    Department = departmentService.NameOf(d.DepartmentId),
                     d.Contact,
                     d.Status
                 }).ToList();
@@ -477,7 +487,7 @@ namespace HospitalSystem.Views
                     OpenEditForm(id);
                     break;
                 case "colAction":
-                    var doc = HospitalData.GetDoctor(id);
+                    var doc = doctorService.Get(id);
                     if (doc == null) return;
                     if (doc.IsActive)
                         DeactivateDoctorFlow(id);
@@ -492,11 +502,11 @@ namespace HospitalSystem.Views
 
         private void ShowDetails(int id)
         {
-            var d = HospitalData.GetDoctor(id);
+            var d = doctorService.Get(id);
             if (d == null) return;
 
             bool editRequested;
-            using (var dlg = new DoctorDetailsDialog(d))
+            using (var dlg = new DoctorDetailsDialog(permissionGuard, departmentService, appointmentService, d))
             {
                 dlg.ShowDialog(this);
                 editRequested = dlg.EditRequested;
@@ -509,9 +519,9 @@ namespace HospitalSystem.Views
 
         private void OpenEditForm(int? id)
         {
-            Doctor existing = id.HasValue ? HospitalData.GetDoctor(id.Value) : null;
+            Doctor existing = id.HasValue ? doctorService.Get(id.Value) : null;
 
-            using (var dlg = new DoctorFormDialog(existing))
+            using (var dlg = new DoctorFormDialog(departmentService, doctorService, existing))
             {
                 dlg.ShowDialog(this);
                 if (dlg.Saved)
@@ -521,17 +531,17 @@ namespace HospitalSystem.Views
 
         private void DeactivateDoctorFlow(int id)
         {
-            var d = HospitalData.GetDoctor(id);
+            var d = doctorService.Get(id);
             if (d == null) return;
 
-            int upcoming = HospitalData.UpcomingAppointmentCountForDoctor(id);
+            int upcoming = appointmentService.UpcomingCountForDoctor(id);
 
             using (var dlg = new DeactivateDoctorDialog(d, upcoming))
             {
                 if (dlg.ShowDialog(this) != DialogResult.OK)
                     return;
 
-                HospitalData.DeactivateDoctor(d, dlg.Reason);
+                doctorService.Deactivate(d, dlg.Reason);
             }
 
             MessageBox.Show("Doctor deactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -540,14 +550,14 @@ namespace HospitalSystem.Views
 
         private void ActivateDoctorFlow(int id)
         {
-            var d = HospitalData.GetDoctor(id);
+            var d = doctorService.Get(id);
             if (d == null) return;
 
             if (MessageBox.Show($"Reactivate Dr. {d.FullName}? They will be selectable for appointments and admissions again.",
                 "Confirm Reactivate", MessageBoxButtons.YesNo, MessageBoxIcon.Question) != DialogResult.Yes)
                 return;
 
-            HospitalData.ActivateDoctor(d);
+            doctorService.Activate(d);
             MessageBox.Show("Doctor reactivated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadDoctors(GetSearchText());
         }
@@ -721,8 +731,18 @@ namespace HospitalSystem.Views
         {
             public bool EditRequested { get; private set; } = false;
 
-            public DoctorDetailsDialog(Doctor d)
+            private readonly IPermissionGuard permissionGuard;
+            private readonly IDepartmentService departmentService;
+            private readonly IAppointmentService appointmentService;
+
+
+            public DoctorDetailsDialog(IPermissionGuard permissionGuard, IDepartmentService departmentService,
+                IAppointmentService appointmentService, Doctor d)
             {
+                this.permissionGuard = permissionGuard;
+                this.departmentService = departmentService;
+                this.appointmentService = appointmentService;
+
                 this.Text = "Doctor Details";
                 this.Size = new Size(440, 560);
                 this.StartPosition = FormStartPosition.CenterParent;
@@ -772,13 +792,13 @@ namespace HospitalSystem.Views
                 this.Controls.Add(body);
                 body.BringToFront();
 
-                int apptCount = HospitalData.AppointmentCountForDoctor(d.Id);
-                int upcomingCount = HospitalData.UpcomingAppointmentCountForDoctor(d.Id);
+                int apptCount = appointmentService.CountForDoctor(d.Id);
+                int upcomingCount = appointmentService.UpcomingCountForDoctor(d.Id);
 
                 AddRow(body, "Doctor ID", d.DoctorNo);
                 AddRow(body, "Full Name", "Dr. " + d.FullName);
                 AddRow(body, "Specialization", d.Specialization ?? "-");
-                AddRow(body, "Department", HospitalData.DepartmentName(d.DepartmentId));
+                AddRow(body, "Department", departmentService.NameOf(d.DepartmentId));
                 AddRow(body, "License Number", string.IsNullOrWhiteSpace(d.LicenseNumber) ? "-" : d.LicenseNumber);
                 AddRow(body, "Credentials", string.IsNullOrWhiteSpace(d.Credentials) ? "-" : d.Credentials);
                 AddRow(body, "Contact", d.Contact ?? "-");
@@ -800,7 +820,7 @@ namespace HospitalSystem.Views
                 btnEdit.FlatAppearance.BorderSize = 0;
                 btnEdit.Cursor = Cursors.Hand;
                 btnEdit.Click += (s, e) => { EditRequested = true; this.Close(); };
-                if (Permissions.Can(Permission.ManageDoctors))
+                if (permissionGuard.Can(Permission.ManageDoctors))
                     footer.Controls.Add(btnEdit);
 
                 Button btnClose = new Button();
@@ -854,8 +874,15 @@ namespace HospitalSystem.Views
 
             public bool Saved { get; private set; } = false;
 
-            public DoctorFormDialog(Doctor existing)
+            private readonly IDepartmentService departmentService;
+            private readonly IDoctorService doctorService;
+
+
+            public DoctorFormDialog(IDepartmentService departmentService, IDoctorService doctorService, Doctor existing)
             {
+                this.departmentService = departmentService;
+                this.doctorService = doctorService;
+
                 selectedId = existing?.Id ?? 0;
 
                 this.Text = existing == null ? "Add New Doctor" : "Update Doctor";
@@ -899,7 +926,7 @@ namespace HospitalSystem.Views
                 cmbDepartment.Size = new Size(330, 28);
                 cmbDepartment.DropDownStyle = ComboBoxStyle.DropDownList;
                 cmbDepartment.Font = new Font("Segoe UI", 10F);
-                cmbDepartment.DataSource = HospitalData.Departments.ToList();
+                cmbDepartment.DataSource = departmentService.All().ToList();
                 cmbDepartment.DisplayMember = "Name";
                 cmbDepartment.ValueMember = "Id";
                 cmbDepartment.SelectedIndex = -1;
@@ -1013,9 +1040,9 @@ namespace HospitalSystem.Views
                 }
 
                 string contact = txtContact.Text.Trim();
-                if (!string.IsNullOrWhiteSpace(contact) && !PhoneRegex.IsMatch(contact))
+                if (!string.IsNullOrWhiteSpace(contact) && !Validation.PhilippineMobile.IsMatch(contact))
                 {
-                    error = "Contact must be a valid PH mobile number, e.g. 09171234567 or +639171234567.";
+                    error = Validation.PhoneMessage;
                     focusTarget = txtContact;
                     return false;
                 }
@@ -1038,7 +1065,7 @@ namespace HospitalSystem.Views
                 {
                     if (selectedId == 0)
                     {
-                        var created = HospitalData.AddDoctor(new Doctor
+                        var created = doctorService.Add(new Doctor
                         {
                             FullName = txtName.Text.Trim(),
                             DepartmentId = departmentId,
@@ -1053,7 +1080,7 @@ namespace HospitalSystem.Views
                     }
                     else
                     {
-                        var d = HospitalData.GetDoctor(selectedId);
+                        var d = doctorService.Get(selectedId);
                         if (d != null)
                         {
                             d.FullName = txtName.Text.Trim();
@@ -1063,7 +1090,7 @@ namespace HospitalSystem.Views
                             d.Credentials = txtCredentials.Text.Trim();
                             d.Contact = txtContact.Text.Trim();
                             d.IsOnDuty = chkOnDuty.Checked;
-                            HospitalData.UpdateDoctor(d);
+                            doctorService.Update(d);
                             MessageBox.Show("Doctor updated successfully.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }

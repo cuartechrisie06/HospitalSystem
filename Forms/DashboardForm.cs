@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Windows.Forms;
 using System.Linq;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Views;
 using HospitalSystem.Models;
 
@@ -37,19 +38,45 @@ namespace HospitalSystem.Forms
         private Color profileRoleColor = Color.FromArgb(107, 114, 128);
         private Control currentView;
 
+        // Everything the modules opened from the sidebar need; this form hands each one its share.
+        private readonly AppServices services;
+        private readonly IUserSession session;
+        private readonly IPermissionGuard permissionGuard;
+        private readonly IPatientService patientService;
+        private readonly IDepartmentService departmentService;
+        private readonly IDoctorService doctorService;
+        private readonly IBedService bedService;
+        private readonly IAppointmentService appointmentService;
+        private readonly IAdmissionService admissionService;
+        private readonly IBillingService billingService;
+        private readonly IAlertService alertService;
+        private readonly IAlertMonitor alertMonitor;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public DashboardForm()
         {
             // Every control is created in InitializeComponent() so the Designer shows the
             // whole sidebar; only the data-driven dashboard content is built at runtime.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                ApplyUserAccess();
-                ShowOverview();
-            }
+        public DashboardForm(AppServices services) : this()
+        {
+            this.services = services;
+            session = services.Session;
+            permissionGuard = services.Guard;
+            patientService = services.Patients;
+            departmentService = services.Departments;
+            doctorService = services.Doctors;
+            bedService = services.Beds;
+            appointmentService = services.Appointments;
+            admissionService = services.Admissions;
+            billingService = services.Billing;
+            alertService = services.Alerts;
+            alertMonitor = services.AlertMonitor;
+
+            ApplyUserAccess();
+            ShowOverview();
         }
 
         // Signed-in user at the top of the sidebar: initials avatar, name, and a role badge
@@ -78,8 +105,8 @@ namespace HospitalSystem.Forms
         // Shows who is signed in and which modules their role can open.
         private void ApplyUserAccess()
         {
-            var user = HospitalData.CurrentUser;
-            bool admin = HospitalData.IsAdmin;
+            var user = session.CurrentUser;
+            bool admin = session.IsAdmin;
 
             lblProfileName.Text = user != null ? user.DisplayName : "Not signed in";
             lblProfileRole.Text = user != null ? user.Role : "";
@@ -88,7 +115,7 @@ namespace HospitalSystem.Forms
             profileInitials = Initials(user != null ? user.DisplayName : null);
             panelProfile.Invalidate();
 
-            btnActivityLog.Visible = Permissions.Can(Permission.ViewActivityLog);
+            btnActivityLog.Visible = permissionGuard.Can(Permission.ViewActivityLog);
             sepActivityLog.Visible = btnActivityLog.Visible;
         }
 
@@ -99,17 +126,21 @@ namespace HospitalSystem.Forms
             ShowOverview();
         }
 
-        private void BtnDashboard_Click(object sender, EventArgs e) => ShowOverview();
-        private void BtnPatients_Click(object sender, EventArgs e) => ShowView(new Views.PatientsView());
-        private void BtnDoctors_Click(object sender, EventArgs e) => ShowView(new Views.DoctorsView());
-        private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(new Views.AppointmentsView());
-        private void BtnAdmissions_Click(object sender, EventArgs e) => ShowView(new Views.AdmissionsView());
-        private void BtnBilling_Click(object sender, EventArgs e) => ShowView(new Views.BillingView());
+        private void BtnDashboard_Click(object sender, EventArgs e)
+        {
+            services.Reload();
+            ShowOverview();
+        }
+        private void BtnPatients_Click(object sender, EventArgs e) => ShowView(NewPatientsView());
+        private void BtnDoctors_Click(object sender, EventArgs e) => ShowView(NewDoctorsView());
+        private void BtnAppointments_Click(object sender, EventArgs e) => ShowView(NewAppointmentsView());
+        private void BtnAdmissions_Click(object sender, EventArgs e) => ShowView(NewAdmissionsView());
+        private void BtnBilling_Click(object sender, EventArgs e) => ShowView(NewBillingView());
 
         private void BtnActivityLog_Click(object sender, EventArgs e)
         {
-            if (!HospitalData.IsAdmin) return;   // the button is hidden for other roles anyway
-            ShowView(new Views.ActivityLogView());
+            if (!session.IsAdmin) return;   // the button is hidden for other roles anyway
+            ShowView(new ActivityLogView(services.Session, services.Users, services.Log, services.LogReader));
         }
 
         // Jump from an alert to the module that raised it.
@@ -117,12 +148,45 @@ namespace HospitalSystem.Forms
         {
             switch (module)
             {
-                case "Admissions": ShowView(new Views.AdmissionsView()); break;
-                case "Doctors": ShowView(new Views.DoctorsView()); break;
-                case "Appointments": ShowView(new Views.AppointmentsView()); break;
-                case "Billing": ShowView(new Views.BillingView()); break;
-                case "Patients": ShowView(new Views.PatientsView()); break;
+                case "Admissions": ShowView(NewAdmissionsView()); break;
+                case "Doctors": ShowView(NewDoctorsView()); break;
+                case "Appointments": ShowView(NewAppointmentsView()); break;
+                case "Billing": ShowView(NewBillingView()); break;
+                case "Patients": ShowView(NewPatientsView()); break;
             }
+        }
+
+        // Each module gets only the services it uses, freshly read from the database so changes
+        // made on other workstations since the last screen show up.
+        private PatientsView NewPatientsView()
+        {
+            services.Reload();
+            return new PatientsView(services.Guard, services.Patients, services.Appointments, services.Admissions);
+        }
+
+        private DoctorsView NewDoctorsView()
+        {
+            services.Reload();
+            return new DoctorsView(services.Guard, services.Departments, services.Doctors, services.Appointments);
+        }
+
+        private AppointmentsView NewAppointmentsView()
+        {
+            services.Reload();
+            return new AppointmentsView(services.Patients, services.Departments, services.Doctors, services.Appointments);
+        }
+
+        private AdmissionsView NewAdmissionsView()
+        {
+            services.Reload();
+            return new AdmissionsView(services.Patients, services.Doctors, services.Beds, services.Admissions, services.Billing);
+        }
+
+        private BillingView NewBillingView()
+        {
+            services.Reload();
+            return new BillingView(services.Session, services.Guard, services.Log, services.Patients, services.Beds,
+                services.Appointments, services.Admissions, services.ChargeSchedules, services.Billing);
         }
 
         // Designer-generated layout. Sidebar, top to bottom: brand (0-60), user profile (60-138),
@@ -192,7 +256,7 @@ namespace HospitalSystem.Forms
             this.btnActivityLog.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnActivityLog.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.btnActivityLog.ForeColor = System.Drawing.Color.White;
-            this.btnActivityLog.Location = new System.Drawing.Point(0, 446);
+            this.btnActivityLog.Location = new System.Drawing.Point(0, 496);
             this.btnActivityLog.Name = "btnActivityLog";
             this.btnActivityLog.Size = new System.Drawing.Size(220, 42);
             this.btnActivityLog.TabIndex = 15;
@@ -200,6 +264,7 @@ namespace HospitalSystem.Forms
             this.btnActivityLog.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             this.btnActivityLog.UseVisualStyleBackColor = false;
             this.btnActivityLog.Click += new System.EventHandler(this.BtnActivityLog_Click);
+            // 
             // 
             // btnBilling
             // 
@@ -314,7 +379,7 @@ namespace HospitalSystem.Forms
             this.sepActivityLog.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.sepActivityLog.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(52)))), ((int)(((byte)(82)))), ((int)(((byte)(165)))));
-            this.sepActivityLog.Location = new System.Drawing.Point(16, 442);
+            this.sepActivityLog.Location = new System.Drawing.Point(16, 492);
             this.sepActivityLog.Name = "sepActivityLog";
             this.sepActivityLog.Size = new System.Drawing.Size(188, 1);
             this.sepActivityLog.TabIndex = 14;
@@ -495,7 +560,7 @@ namespace HospitalSystem.Forms
         private void ShowOverview()
         {
             // Time-based rules (overdue appointments, long waits) are re-checked on every visit.
-            AlertMonitor.Evaluate();
+            alertMonitor.Evaluate();
 
             panelContent.Controls.Clear();
 
@@ -504,23 +569,23 @@ namespace HospitalSystem.Forms
             overview.BackColor = Color.FromArgb(243, 244, 246);
             overview.AutoScroll = true;
 
-            bool seesFinancials = Permissions.Can(Permission.ViewFinancials);
+            bool seesFinancials = permissionGuard.Can(Permission.ViewFinancials);
 
             // ===== 0. Whose view this is =====
             var banner = BuildRoleBanner(seesFinancials);
 
             // ===== 1. Summary cards (administrators also get the money owed to the hospital) =====
-            int occupied = HospitalData.OccupiedBedsCount();
-            int totalBeds = HospitalData.TotalBedsCount();
-            double rate = HospitalData.OccupancyRate();
-            var today = HospitalData.AppointmentsToday();
+            int occupied = bedService.OccupiedCount();
+            int totalBeds = bedService.TotalCount();
+            double rate = bedService.OccupancyRate();
+            var today = appointmentService.Today();
             int todayOpen = today.Count(a => a.IsOpen);
             int next7 = UpcomingAppointments().Count;
-            var pending = HospitalData.PendingAdmissions();
+            var pending = admissionService.Pending();
             // An acknowledged condition is still unresolved. Keep it visible so a staff
             // shortage is never mistaken for an alert that has cleared.
-            var activeAlerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
-            var acknowledgedAlerts = VisibleAlerts(HospitalData.AcknowledgedAlerts(), seesFinancials);
+            var activeAlerts = VisibleAlerts(alertService.Active(), seesFinancials);
+            var acknowledgedAlerts = VisibleAlerts(alertService.Acknowledged(), seesFinancials);
             var alerts = activeAlerts.Concat(acknowledgedAlerts)
                 .OrderBy(a => a.IsAcknowledged)
                 .ThenBy(a => a.SeverityRank)
@@ -535,10 +600,10 @@ namespace HospitalSystem.Forms
                 CreateSummaryCard("Bed Occupancy", $"{occupied}/{totalBeds}",
                     $"{rate:0}% occupied  •  {totalBeds - occupied} free",
                     rate >= 100 ? Red : rate >= AlertMonitor.HighOccupancyRate * 100 ? Amber : Navy),
-                CreateSummaryCard("Admitted Patients", HospitalData.ActiveAdmissions().Count.ToString(),
+                CreateSummaryCard("Admitted Patients", admissionService.Active().Count.ToString(),
                     "currently in a bed", Navy),
                 CreateSummaryCard("Pending Admissions", pending.Count.ToString(),
-                    pending.Count == 0 ? "no one waiting" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
+                    pending.Count == 0 ? "no one waiting" : "longest wait " + DurationText.Format(pending[0].WaitingTime),
                     pending.Count == 0 ? Navy : Amber),
                 CreateSummaryCard("Alerts", alerts.Count.ToString(),
                     alerts.Count == 0 ? "all clear" : $"{activeAlerts.Count} active  •  {acknowledgedAlerts.Count} acknowledged",
@@ -546,7 +611,7 @@ namespace HospitalSystem.Forms
             };
             if (seesFinancials)
             {
-                decimal patientsOwe = HospitalData.OutstandingBalance(), hmosOwe = HospitalData.OutstandingHmo();
+                decimal patientsOwe = billingService.OutstandingBalance(), hmosOwe = billingService.OutstandingHmo();
                 cards.Add(CreateSummaryCard("Outstanding", (patientsOwe + hmosOwe).ToString("N0"),
                     $"patients {patientsOwe:N0}  •  HMO {hmosOwe:N0}", patientsOwe + hmosOwe > 0 ? Amber : Green));
             }
@@ -596,7 +661,7 @@ namespace HospitalSystem.Forms
 
         private Panel BuildRoleBanner(bool admin)
         {
-            var user = HospitalData.CurrentUser;
+            var user = session.CurrentUser;
             int hour = DateTime.Now.Hour;
             string greeting = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
             Color accent = admin ? Color.FromArgb(217, 119, 6) : Color.FromArgb(13, 148, 136);
@@ -686,7 +751,7 @@ namespace HospitalSystem.Forms
 
             var hint = new Label
             {
-                Text = Permissions.Can(Permission.ViewFinancials)
+                Text = permissionGuard.Can(Permission.ViewFinancials)
                     ? "Active and acknowledged alerts stay visible until their condition is fixed."
                     : "Clinical alerts stay visible until their condition is fixed.",
                 Dock = DockStyle.Top,
@@ -821,7 +886,7 @@ namespace HospitalSystem.Forms
             btnAck.FlatAppearance.BorderSize = 1;
             btnAck.Click += (s, e) =>
             {
-                HospitalData.AcknowledgeAlert(a.Id);
+                alertService.Acknowledge(a.Id);
                 ShowOverview();
             };
 
@@ -893,7 +958,7 @@ namespace HospitalSystem.Forms
                 btnAck.FlatAppearance.BorderSize = 0;
                 btnAck.Click += (s, e) =>
                 {
-                    HospitalData.AcknowledgeAlert(a.Id);
+                    alertService.Acknowledge(a.Id);
                     dlg.DialogResult = DialogResult.OK;
                 };
 
@@ -936,7 +1001,7 @@ namespace HospitalSystem.Forms
         private Panel BuildPendingAdmissionsCard(System.Collections.Generic.List<Admission> pending)
         {
             var card = CreateCardPanel();
-            int free = HospitalData.AvailableBeds().Count;
+            int free = bedService.Available().Count;
             var title = MakeCardTitle("Pending Admissions (waiting for a bed)", pending.Count > 0 ? Amber : Navy);
 
             var lv = MakeListView(("#", 30), ("Patient", 130), ("Doctor", 110), ("Waiting", 80), ("Reason", 140));
@@ -948,9 +1013,9 @@ namespace HospitalSystem.Forms
                 foreach (var a in pending)
                 {
                     var item = new ListViewItem((n++).ToString());
-                    item.SubItems.Add(HospitalData.PatientName(a.PatientId));
-                    item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
-                    item.SubItems.Add(HospitalData.FormatDuration(a.WaitingTime));
+                    item.SubItems.Add(patientService.NameOf(a.PatientId));
+                    item.SubItems.Add(doctorService.NameOf(a.DoctorId));
+                    item.SubItems.Add(DurationText.Format(a.WaitingTime));
                     item.SubItems.Add(a.Diagnosis ?? "");
                     if (a.WaitingTime >= AlertMonitor.LongWait)
                         item.ForeColor = Red;
@@ -977,10 +1042,10 @@ namespace HospitalSystem.Forms
         }
 
         // ---------- Appointments ----------
-        private static System.Collections.Generic.List<Appointment> UpcomingAppointments()
+        private System.Collections.Generic.List<Appointment> UpcomingAppointments()
         {
-            return HospitalData.Appointments
-                .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != "Cancelled")
+            return appointmentService.All()
+                .Where(a => a.ScheduledOn >= DateTime.Today && a.ScheduledOn < DateTime.Today.AddDays(8) && a.Status != AppointmentStatus.Cancelled)
                 .OrderBy(a => a.ScheduledOn)
                 .ToList();
         }
@@ -1002,8 +1067,8 @@ namespace HospitalSystem.Forms
                     bool isToday = a.ScheduledOn.Date == DateTime.Today;
                     var item = new ListViewItem(isToday ? "Today" : a.ScheduledOn.ToString("ddd MMM dd"));
                     item.SubItems.Add(a.ScheduledOn.ToString("hh:mm tt"));
-                    item.SubItems.Add(HospitalData.PatientName(a.PatientId));
-                    item.SubItems.Add(HospitalData.DoctorName(a.DoctorId));
+                    item.SubItems.Add(patientService.NameOf(a.PatientId));
+                    item.SubItems.Add(doctorService.NameOf(a.DoctorId));
                     item.SubItems.Add(a.Status);
                     if (isToday) item.Font = bold;
                     if (a.IsOpen && a.ScheduledOn < DateTime.Now - AlertMonitor.AppointmentGrace)
@@ -1024,12 +1089,12 @@ namespace HospitalSystem.Forms
             var card = CreateCardPanel();
             var title = MakeCardTitle("Bed Occupancy by Ward", Navy);
 
-            var wards = HospitalData.Beds
+            var wards = bedService.All()
                 .GroupBy(b => b.Ward ?? "(no ward)")
                 .OrderBy(g => g.Key)
                 .Select(g => new { Ward = g.Key, Total = g.Count(), Occupied = g.Count(b => b.IsOccupied) })
                 .ToList();
-            wards.Add(new { Ward = "All wards", Total = HospitalData.TotalBedsCount(), Occupied = HospitalData.OccupiedBedsCount() });
+            wards.Add(new { Ward = "All wards", Total = bedService.TotalCount(), Occupied = bedService.OccupiedCount() });
 
             var bars = new Panel { Dock = DockStyle.Fill, BackColor = Color.White };
             bars.Paint += (s, e) =>
@@ -1075,7 +1140,7 @@ namespace HospitalSystem.Forms
             var title = MakeCardTitle("Doctors on Duty", Navy);
 
             var lv = MakeListView(("Doctor", 130), ("Specialization", 110), ("Department", 100));
-            var onDuty = HospitalData.DoctorsOnDuty();
+            var onDuty = doctorService.OnDuty();
             if (onDuty.Count == 0)
                 lv.Items.Add(new ListViewItem(new[] { "—", "No doctors on duty", "—" }));
             else
@@ -1084,7 +1149,7 @@ namespace HospitalSystem.Forms
                 {
                     var item = new ListViewItem("Dr. " + d.FullName);
                     item.SubItems.Add(d.Specialization);
-                    item.SubItems.Add(HospitalData.DepartmentName(d.DepartmentId));
+                    item.SubItems.Add(departmentService.NameOf(d.DepartmentId));
                     lv.Items.Add(item);
                 }
             }
@@ -1227,7 +1292,7 @@ namespace HospitalSystem.Forms
             for (int i = 6; i >= 0; i--)
             {
                 var day = DateTime.Today.AddDays(-i);
-                int count = HospitalData.Appointments.Count(a => a.ScheduledOn.Date == day);
+                int count = appointmentService.All().Count(a => a.ScheduledOn.Date == day);
                 result[6 - i] = (day.ToString("ddd"), count);
             }
             return result;
@@ -1239,7 +1304,7 @@ namespace HospitalSystem.Forms
             for (int i = 5; i >= 0; i--)
             {
                 var month = DateTime.Today.AddMonths(-i);
-                int count = HospitalData.Admissions.Count(a => !a.IsPending && a.Status != "Cancelled" &&
+                int count = admissionService.All().Count(a => !a.IsPending && a.Status != AdmissionStatus.Cancelled &&
                     a.AdmittedOn.Year == month.Year && a.AdmittedOn.Month == month.Month);
                 result[5 - i] = (month.ToString("MMM"), count);
             }
@@ -1284,9 +1349,9 @@ namespace HospitalSystem.Forms
             if (MessageBox.Show("Are you sure you want to sign out?", "Sign Out",
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.SignOut();   // logs the sign-out
+                session.SignOut();   // logs the sign-out
                 this.Hide();
-                using (var login = new LoginForm())
+                using (var login = new LoginForm(services.Auth))
                 {
                     if (login.ShowDialog() == DialogResult.OK)
                     {

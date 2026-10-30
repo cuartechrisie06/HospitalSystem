@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -31,18 +32,25 @@ namespace HospitalSystem.Views
         private Button btnClear;
         private Button btnClose;
 
+        private readonly IBedService bedService;
+        private readonly IChargeScheduleService chargeScheduleService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public ChargeScheduleForm()
         {
             // Every control and event is set up in InitializeComponent() (Designer format),
             // so the Designer shows the complete dialog.
             InitializeComponent();
+        }
 
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
-                LoadWards();
-                LoadGrid();
-            }
+        public ChargeScheduleForm(IBedService bedService, IChargeScheduleService chargeScheduleService) : this()
+        {
+            this.bedService = bedService;
+            this.chargeScheduleService = chargeScheduleService;
+
+            cmbCategory.DataSource = Enum.GetValues(typeof(BillCategory));
+            LoadWards();
+            LoadGrid();
         }
 
         // Designer-generated layout: explanation, "show inactive", the schedule grid, the
@@ -284,13 +292,13 @@ namespace HospitalSystem.Views
         private void LoadWards()
         {
             var wards = new List<string> { AllWards };
-            wards.AddRange(HospitalData.Wards());
+            wards.AddRange(bedService.Wards());
             cmbWard.DataSource = wards;
         }
 
         private void LoadGrid(int selectId = 0)
         {
-            grid.DataSource = HospitalData.ChargeSchedules
+            grid.DataSource = chargeScheduleService.All()
                 .Where(c => chkShowInactive.Checked || c.IsActive)
                 .OrderBy(c => c.Category)
                 .ThenBy(c => c.Description)
@@ -324,7 +332,7 @@ namespace HospitalSystem.Views
         {
             if (grid.CurrentRow == null) return null;
             int id = Convert.ToInt32(grid.CurrentRow.Cells["Id"].Value);
-            return HospitalData.ChargeSchedules.FirstOrDefault(c => c.Id == id);
+            return chargeScheduleService.All().FirstOrDefault(c => c.Id == id);
         }
 
         private void Grid_SelectionChanged(object sender, EventArgs e)
@@ -393,7 +401,7 @@ namespace HospitalSystem.Views
 
             var c = new ChargeSchedule();
             ApplyFields(c);
-            HospitalData.AddChargeSchedule(c);
+            chargeScheduleService.Add(c);
             LoadGrid(c.Id);
         }
 
@@ -403,7 +411,7 @@ namespace HospitalSystem.Views
             if (c == null || !ValidateFields()) return;
 
             ApplyFields(c);
-            HospitalData.UpdateChargeSchedule(c);
+            chargeScheduleService.Update(c);
             LoadGrid(c.Id);
         }
 
@@ -413,7 +421,7 @@ namespace HospitalSystem.Views
             if (c == null) return;
 
             c.IsActive = !c.IsActive;
-            HospitalData.UpdateChargeSchedule(c);
+            chargeScheduleService.Update(c);
             LoadGrid(c.Id);
         }
     }

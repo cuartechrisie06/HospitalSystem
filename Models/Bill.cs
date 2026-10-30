@@ -47,7 +47,7 @@ namespace HospitalSystem.Models
             get { return "B-" + Id.ToString("D4"); }
         }
 
-        // The methods below only change the object; HospitalData persists the change.
+        // The methods below only change the object; BillingService persists the change.
 
         public void AddItem(BillItem item)
         {

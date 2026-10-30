@@ -11,7 +11,7 @@ namespace HospitalSystem.Models
         public string Contact { get; set; }
         public string Address { get; set; }
         public string BloodType { get; set; }
-        public string Status { get; set; } = "Active";
+        public string Status { get; set; } = PatientStatus.Active;
         public DateTime RegisteredOn { get; set; }
 
         public DateTime? DeactivatedAt { get; set; }
@@ -27,7 +27,7 @@ namespace HospitalSystem.Models
             get { return "P-" + Id.ToString("D4"); }
         }
 
-        public bool IsActive => Status != "Inactive";
+        public bool IsActive => Status != PatientStatus.Inactive;
 
         public int? Age
         {

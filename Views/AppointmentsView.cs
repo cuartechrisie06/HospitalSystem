@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -48,22 +49,32 @@ namespace HospitalSystem.Views
         private int selectedPatientId = 0;
         private bool patientSearchPlaceholderActive = true;
 
+        private readonly IPatientService patientService;
+        private readonly IDepartmentService departmentService;
+        private readonly IDoctorService doctorService;
+        private readonly IAppointmentService appointmentService;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public AppointmentsView()
         {
             // Every control and event is set up in InitializeComponent() (Designer format),
             // so the Designer shows the complete screen.
             InitializeComponent();
+        }
 
-            // The Designer instantiates this class to render it at design time;
-            // data loading must never run then, or it tries to open a DB connection.
-            if (!DesignTimeHelper.IsDesignMode)
-            {
-                dtpDate.MinDate = DateTime.Today;   // can't be expressed in designer code
-                LoadDepartments();
-                LoadDoctors();
-                LoadPatientList("");
-                LoadAppointments();
-            }
+        public AppointmentsView(IPatientService patientService, IDepartmentService departmentService,
+            IDoctorService doctorService, IAppointmentService appointmentService) : this()
+        {
+            this.patientService = patientService;
+            this.departmentService = departmentService;
+            this.doctorService = doctorService;
+            this.appointmentService = appointmentService;
+
+            dtpDate.MinDate = DateTime.Today;   // can't be expressed in designer code
+            LoadDepartments();
+            LoadDoctors();
+            LoadPatientList("");
+            LoadAppointments();
         }
 
         // Designer-generated layout. root is a 4-row table, top to bottom: the Schedule
@@ -487,7 +498,7 @@ namespace HospitalSystem.Views
         {
             cmbDepartment.DisplayMember = "Name";
             cmbDepartment.ValueMember = "Id";
-            cmbDepartment.DataSource = HospitalData.Departments.ToList();
+            cmbDepartment.DataSource = departmentService.All().ToList();
             cmbDepartment.SelectedIndex = cmbDepartment.Items.Count > 0 ? 0 : -1;
         }
 
@@ -496,14 +507,14 @@ namespace HospitalSystem.Views
         {
             cmbDoctor.DisplayMember = "Name";
             cmbDoctor.ValueMember = "Id";
-            cmbDoctor.DataSource = HospitalData.ActiveDoctors();
+            cmbDoctor.DataSource = doctorService.Active();
             cmbDoctor.SelectedIndex = cmbDoctor.Items.Count > 0 ? 0 : -1;
         }
 
         // Only active patients are listed, so a deactivated patient can never be scheduled.
         private void LoadPatientList(string filter)
         {
-            var active = HospitalData.ActivePatients();
+            var active = patientService.Active();
             var source = active.AsEnumerable();
 
             if (!string.IsNullOrWhiteSpace(filter))
@@ -540,15 +551,15 @@ namespace HospitalSystem.Views
 
         private void LoadAppointments()
         {
-            grid.DataSource = HospitalData.Appointments
+            grid.DataSource = appointmentService.All()
                 .OrderByDescending(a => a.ScheduledOn)
                 .Select(a => new
                 {
                     a.Id,
                     a.AppointmentNo,
-                    Patient = HospitalData.PatientName(a.PatientId),
-                    Doctor = HospitalData.DoctorName(a.DoctorId),
-                    Department = HospitalData.DepartmentName(a.DepartmentId),
+                    Patient = patientService.NameOf(a.PatientId),
+                    Doctor = doctorService.NameOf(a.DoctorId),
+                    Department = departmentService.NameOf(a.DepartmentId),
                     Date = a.ScheduledOn.ToString("yyyy-MM-dd HH:mm"),
                     a.Reason,
                     a.Status
@@ -592,7 +603,7 @@ namespace HospitalSystem.Views
             if (idObj == null) return;
 
             selectedPatientId = Convert.ToInt32(idObj);
-            var p = HospitalData.GetPatient(selectedPatientId);
+            var p = patientService.Get(selectedPatientId);
             if (p != null)
             {
                 lblSelectedPatient.Text = "Selected patient:  " + p.FullName + "  (" + p.PatientNo + ")";
@@ -602,7 +613,7 @@ namespace HospitalSystem.Views
 
         private void BtnSelectPatient_Click(object sender, System.EventArgs e)
         {
-            using (var picker = new PatientPickerDialog(HospitalData.ActivePatients(), "Select Patient for Appointment"))
+            using (var picker = new PatientPickerDialog(patientService.Active(), "Select Patient for Appointment"))
             {
                 if (picker.ShowDialog(this) != DialogResult.OK) return;
                 selectedPatientId = picker.SelectedPatient.Id;
@@ -622,7 +633,7 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            var patient = HospitalData.GetPatient(selectedPatientId);
+            var patient = patientService.Get(selectedPatientId);
             if (patient == null || !patient.IsActive)
             {
                 MessageBox.Show("The selected patient is not active and cannot be scheduled. Please choose an active patient.",
@@ -641,7 +652,7 @@ namespace HospitalSystem.Views
 
             // Doctor: must still be active (guards against deactivation after the list loaded).
             int doctorId = Convert.ToInt32(cmbDoctor.SelectedValue);
-            var doctor = HospitalData.GetDoctor(doctorId);
+            var doctor = doctorService.Get(doctorId);
             if (doctor == null || !doctor.IsActive)
             {
                 MessageBox.Show("The selected doctor is no longer active. The doctor list has been refreshed; please pick an active doctor.",
@@ -651,21 +662,21 @@ namespace HospitalSystem.Views
             }
 
             DateTime when = dtpDate.Value;
-            if (HospitalData.HasAppointmentClash(doctorId, when))
+            if (appointmentService.HasClash(doctorId, when))
             {
                 MessageBox.Show("This doctor already has an appointment around that time.", "Conflict",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
 
-            HospitalData.AddAppointment(new Appointment
+            appointmentService.Add(new Appointment
             {
                 PatientId = patient.Id,
                 DoctorId = doctorId,
                 DepartmentId = Convert.ToInt32(cmbDepartment.SelectedValue),
                 ScheduledOn = when,
                 Reason = txtReason.Text.Trim(),
-                Status = "Pending"
+                Status = AppointmentStatus.Pending
             });
 
             MessageBox.Show("Appointment scheduled (Pending).", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
@@ -685,7 +696,7 @@ namespace HospitalSystem.Views
         {
             if (grid.CurrentRow == null) return null;
             int id = Convert.ToInt32(grid.CurrentRow.Cells["Id"].Value);
-            return HospitalData.Appointments.FirstOrDefault(a => a.Id == id);
+            return appointmentService.All().FirstOrDefault(a => a.Id == id);
         }
 
         private void BtnConfirm_Click(object sender, EventArgs e)
@@ -693,13 +704,13 @@ namespace HospitalSystem.Views
             var appt = GetSelectedAppointment();
             if (appt == null) return;
 
-            if (appt.Status != "Pending")
+            if (appt.Status != AppointmentStatus.Pending)
             {
                 MessageBox.Show("Only Pending appointments can be confirmed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            HospitalData.UpdateAppointmentStatus(appt, "Confirmed");
+            appointmentService.UpdateStatus(appt, AppointmentStatus.Confirmed);
             MessageBox.Show("Appointment confirmed.", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
             LoadAppointments();
         }
@@ -717,7 +728,7 @@ namespace HospitalSystem.Views
 
             if (MessageBox.Show("Cancel this appointment?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.CancelAppointment(appt);
+                appointmentService.Cancel(appt);
                 LoadAppointments();
             }
         }
@@ -736,7 +747,7 @@ namespace HospitalSystem.Views
             DateTime? newDate = PromptForNewDate(appt);
             if (newDate == null) return;
 
-            if (HospitalData.HasAppointmentClash(appt.DoctorId, newDate.Value, appt.Id))
+            if (appointmentService.HasClash(appt.DoctorId, newDate.Value, appt.Id))
             {
                 MessageBox.Show("This doctor already has an appointment around that time.", "Conflict", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -744,7 +755,7 @@ namespace HospitalSystem.Views
 
             try
             {
-                HospitalData.RescheduleAppointment(appt, newDate.Value);
+                appointmentService.Reschedule(appt, newDate.Value);
                 MessageBox.Show("Appointment moved to " + appt.ScheduledOn.ToString("yyyy-MM-dd HH:mm") + ".", "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 LoadAppointments();
             }
@@ -759,7 +770,7 @@ namespace HospitalSystem.Views
             var appt = GetSelectedAppointment();
             if (appt == null) return;
 
-            if (appt.Status != "Confirmed")
+            if (appt.Status != AppointmentStatus.Confirmed)
             {
                 MessageBox.Show("Only Confirmed appointments can be marked as completed.", "Info", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
@@ -767,7 +778,7 @@ namespace HospitalSystem.Views
 
             if (MessageBox.Show("Mark this appointment as completed?", "Confirm", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
             {
-                HospitalData.CompleteAppointment(appt);
+                appointmentService.Complete(appt);
                 LoadAppointments();
             }
         }

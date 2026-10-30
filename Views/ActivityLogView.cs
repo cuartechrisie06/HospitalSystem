@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Windows.Forms;
 using HospitalSystem.Data;
+using HospitalSystem.Services;
 using HospitalSystem.Models;
 
 namespace HospitalSystem.Views
@@ -37,25 +38,37 @@ namespace HospitalSystem.Views
         private Label lblAccessDenied;
         private List<ActivityItem> rows = new List<ActivityItem>();
 
+        private readonly IUserSession session;
+        private readonly IUserDirectory userDirectory;
+        private readonly IActivityLogger activityLog;
+        private readonly IActivityLogReader activityLogReader;
+
+        // Used by the Designer to render the layout; the app uses the constructor below.
         public ActivityLogView()
         {
             // Every control and event is set up in InitializeComponent() (Designer format),
             // so the Designer shows the complete screen.
             InitializeComponent();
+        }
 
-            if (!DesignTimeHelper.IsDesignMode)
+        public ActivityLogView(IUserSession session, IUserDirectory userDirectory, IActivityLogger activityLog,
+            IActivityLogReader activityLogReader) : this()
+        {
+            this.session = session;
+            this.userDirectory = userDirectory;
+            this.activityLog = activityLog;
+            this.activityLogReader = activityLogReader;
+
+            if (!session.IsAdmin)
             {
-                if (!HospitalData.IsAdmin)
-                {
-                    ShowAccessDenied();
-                    return;
-                }
-                // Default range: the last 7 days (dates can't be expressed in designer code).
-                dtFrom.Value = DateTime.Today.AddDays(-7);
-                dtTo.Value = DateTime.Today;
-                LoadFilters();
-                LoadLog();
+                ShowAccessDenied();
+                return;
             }
+            // Default range: the last 7 days (dates can't be expressed in designer code).
+            dtFrom.Value = DateTime.Today.AddDays(-7);
+            dtTo.Value = DateTime.Today;
+            LoadFilters();
+            LoadLog();
         }
 
         // Designer-generated layout: the filter card on top, the entry count, then the log grid.
@@ -323,11 +336,11 @@ namespace HospitalSystem.Views
         private void LoadFilters()
         {
             var modules = new List<string> { All };
-            modules.AddRange(HospitalData.ActivityLogModules());
+            modules.AddRange(activityLogReader.Modules());
             cmbModule.DataSource = modules;
 
-            var users = new List<string> { All, HospitalData.SystemUser };
-            users.AddRange(HospitalData.Users.Select(u => u.Username));
+            var users = new List<string> { All, ActivityItem.SystemUser };
+            users.AddRange(userDirectory.All().Select(u => u.Username));
             cmbUser.DataSource = users;
         }
 
@@ -344,7 +357,7 @@ namespace HospitalSystem.Views
             string module = cmbModule.SelectedItem as string;
             string user = cmbUser.SelectedItem as string;
 
-            rows = HospitalData.QueryActivityLog(from, to,
+            rows = activityLogReader.Query(from, to,
                 module == All ? null : module,
                 user == All ? null : user,
                 txtSearch.Text, MaxRows);
@@ -389,7 +402,7 @@ namespace HospitalSystem.Views
                     }.Select(Csv)));
                 File.WriteAllText(dlg.FileName, sb.ToString(), new UTF8Encoding(true));
 
-                HospitalData.LogActivity("Activity Log", "Exported",
+                activityLog.Log("Activity Log", "Exported",
                     $"Exported {rows.Count} activity log entries ({dtFrom.Value:yyyy-MM-dd} to {dtTo.Value:yyyy-MM-dd})", "📤");
                 MessageBox.Show($"Exported {rows.Count} entries to\n{dlg.FileName}", "Export", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
