@@ -35,7 +35,7 @@ namespace HospitalSystem.Forms
 
         private string profileInitials = "";
         private Color profileRoleColor = Color.FromArgb(107, 114, 128);
-        private UserControl currentView;
+        private Control currentView;
 
         public DashboardForm()
         {
@@ -517,8 +517,16 @@ namespace HospitalSystem.Forms
             int todayOpen = today.Count(a => a.IsOpen);
             int next7 = UpcomingAppointments().Count;
             var pending = HospitalData.PendingAdmissions();
-            var alerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
-            int highAlerts = alerts.Count(a => a.Severity == "High");
+            // An acknowledged condition is still unresolved. Keep it visible so a staff
+            // shortage is never mistaken for an alert that has cleared.
+            var activeAlerts = VisibleAlerts(HospitalData.ActiveAlerts(), seesFinancials);
+            var acknowledgedAlerts = VisibleAlerts(HospitalData.AcknowledgedAlerts(), seesFinancials);
+            var alerts = activeAlerts.Concat(acknowledgedAlerts)
+                .OrderBy(a => a.IsAcknowledged)
+                .ThenBy(a => a.SeverityRank)
+                .ThenByDescending(a => a.CreatedOn)
+                .ToList();
+            int highAlerts = activeAlerts.Count(a => a.Severity == "High");
 
             var cards = new System.Collections.Generic.List<Panel>
             {
@@ -532,9 +540,9 @@ namespace HospitalSystem.Forms
                 CreateSummaryCard("Pending Admissions", pending.Count.ToString(),
                     pending.Count == 0 ? "no one waiting" : "longest wait " + HospitalData.FormatDuration(pending[0].WaitingTime),
                     pending.Count == 0 ? Navy : Amber),
-                CreateSummaryCard("Active Alerts", alerts.Count.ToString(),
-                    alerts.Count == 0 ? "all clear" : $"{highAlerts} high priority",
-                    highAlerts > 0 ? Red : alerts.Count > 0 ? Amber : Green)
+                CreateSummaryCard("Alerts", alerts.Count.ToString(),
+                    alerts.Count == 0 ? "all clear" : $"{activeAlerts.Count} active  •  {acknowledgedAlerts.Count} acknowledged",
+                    highAlerts > 0 ? Red : activeAlerts.Count > 0 ? Amber : alerts.Count > 0 ? Navy : Green)
             };
             if (seesFinancials)
             {
@@ -673,14 +681,14 @@ namespace HospitalSystem.Forms
         private Panel BuildAlertsCard(System.Collections.Generic.List<Alert> alerts)
         {
             var card = CreateCardPanel();
-            int acknowledged = VisibleAlerts(HospitalData.AcknowledgedAlerts(), Permissions.Can(Permission.ViewFinancials)).Count;
+            int acknowledged = alerts.Count(a => a.IsAcknowledged);
             var title = MakeCardTitle("Alerts" + (acknowledged > 0 ? $"    ({acknowledged} acknowledged, still ongoing)" : ""), Red);
 
             var hint = new Label
             {
                 Text = Permissions.Can(Permission.ViewFinancials)
-                    ? "Raised automatically by the other modules; each clears itself once fixed."
-                    : "Clinical alerts, raised automatically; each clears itself once fixed.",
+                    ? "Active and acknowledged alerts stay visible until their condition is fixed."
+                    : "Clinical alerts stay visible until their condition is fixed.",
                 Dock = DockStyle.Top,
                 Height = 18,
                 Font = new Font("Segoe UI", 8F),
@@ -751,7 +759,13 @@ namespace HospitalSystem.Forms
         private Panel CreateAlertItem(Alert a)
         {
             Color bg, border;
+            bool acknowledged = a.IsAcknowledged;
             SeverityColors(a.Severity, out bg, out border);
+            if (acknowledged)
+            {
+                bg = Color.FromArgb(243, 244, 246);
+                border = Color.FromArgb(107, 114, 128);
+            }
 
             var p = new Panel
             {
@@ -770,7 +784,8 @@ namespace HospitalSystem.Forms
 
             var lblTitle = new Label
             {
-                Text = (a.Severity == "High" ? "⚠ " : "") + a.Title + (a.Module != null ? "   ·   " + a.Module : ""),
+                Text = (acknowledged ? "Acknowledged · " : (a.Severity == "High" ? "⚠ " : "")) +
+                       a.Title + (a.Module != null ? "   ·   " + a.Module : ""),
                 Font = new Font("Segoe UI", 9F, FontStyle.Bold),
                 ForeColor = Color.FromArgb(30, 30, 30),
                 AutoSize = true,
@@ -791,7 +806,7 @@ namespace HospitalSystem.Forms
 
             var btnAck = new Button
             {
-                Text = "Acknowledge",
+                Text = acknowledged ? "Acknowledged" : "Acknowledge",
                 Font = new Font("Segoe UI", 7.5F, FontStyle.Bold),
                 Size = new Size(86, 24),
                 Location = new Point(p.Width - 94, 16),
@@ -801,6 +816,7 @@ namespace HospitalSystem.Forms
                 ForeColor = border,
                 Cursor = Cursors.Hand
             };
+            btnAck.Enabled = !acknowledged;
             btnAck.FlatAppearance.BorderColor = border;
             btnAck.FlatAppearance.BorderSize = 1;
             btnAck.Click += (s, e) =>
@@ -1237,8 +1253,28 @@ namespace HospitalSystem.Forms
                 panelContent.Controls.Remove(currentView);
                 currentView.Dispose();
             }
-            currentView = view;
-            currentView.Dock = DockStyle.Fill;
+            // The admission and billing screens contain two dense data areas. At laptop-sized
+            // heights, filling the dashboard used to compress the lower grid/panels until they
+            // were hard to use. Give those screens a readable working height and scroll the
+            // module as one page when the window cannot fit it.
+            if (view is AdmissionsView || view is BillingView)
+            {
+                var scroll = new Panel
+                {
+                    Dock = DockStyle.Fill,
+                    AutoScroll = true,
+                    BackColor = Color.FromArgb(243, 244, 246)
+                };
+                view.Dock = DockStyle.Top;
+                view.Height = view is BillingView ? 900 : 850;
+                scroll.Controls.Add(view);
+                currentView = scroll;
+            }
+            else
+            {
+                currentView = view;
+                currentView.Dock = DockStyle.Fill;
+            }
             panelContent.Controls.Add(currentView);
             currentView.BringToFront();
         }

@@ -18,7 +18,10 @@ namespace HospitalSystem.Views
         private Panel createPanel;
         private Label lblCreateTitle;
         private Label lblPatient;
-        private ComboBox cmbPatient;
+        private Button btnSelectPatient;
+        private Label lblSelectedPatient;
+        private PatientSelector patientSelector;
+        private Patient selectedPatient;
         private Label lblAdmission;
         private ComboBox cmbAdmission;
         private Label lblAppointment;
@@ -199,7 +202,9 @@ namespace HospitalSystem.Views
             this.createPanel = new System.Windows.Forms.Panel();
             this.lblCreateTitle = new System.Windows.Forms.Label();
             this.lblPatient = new System.Windows.Forms.Label();
-            this.cmbPatient = new System.Windows.Forms.ComboBox();
+            this.btnSelectPatient = new System.Windows.Forms.Button();
+            this.lblSelectedPatient = new System.Windows.Forms.Label();
+            this.patientSelector = new HospitalSystem.Views.PatientSelector();
             this.lblAdmission = new System.Windows.Forms.Label();
             this.cmbAdmission = new System.Windows.Forms.ComboBox();
             this.lblAppointment = new System.Windows.Forms.Label();
@@ -345,7 +350,8 @@ namespace HospitalSystem.Views
             this.createPanel.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
             this.createPanel.Controls.Add(this.lblCreateTitle);
             this.createPanel.Controls.Add(this.lblPatient);
-            this.createPanel.Controls.Add(this.cmbPatient);
+            this.createPanel.Controls.Add(this.btnSelectPatient);
+            this.createPanel.Controls.Add(this.lblSelectedPatient);
             this.createPanel.Controls.Add(this.lblAdmission);
             this.createPanel.Controls.Add(this.cmbAdmission);
             this.createPanel.Controls.Add(this.lblAppointment);
@@ -358,7 +364,7 @@ namespace HospitalSystem.Views
             this.createPanel.Location = new System.Drawing.Point(10, 54);
             this.createPanel.Name = "createPanel";
             this.createPanel.Padding = new System.Windows.Forms.Padding(15);
-            this.createPanel.Size = new System.Drawing.Size(1004, 145);
+            this.createPanel.Size = new System.Drawing.Size(1004, 170);
             this.createPanel.TabIndex = 4;
             //
             // lblCreateTitle
@@ -380,14 +386,13 @@ namespace HospitalSystem.Views
             this.lblPatient.TabIndex = 1;
             this.lblPatient.Text = "Patient";
             //
-            // cmbPatient
-            //
-            this.cmbPatient.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbPatient.Location = new System.Drawing.Point(15, 65);
-            this.cmbPatient.Name = "cmbPatient";
-            this.cmbPatient.Size = new System.Drawing.Size(250, 21);
-            this.cmbPatient.TabIndex = 2;
-            this.cmbPatient.SelectedIndexChanged += new System.EventHandler(this.CmbPatient_SelectedIndexChanged);
+            this.btnSelectPatient.Location = new System.Drawing.Point(15, 65);
+            this.btnSelectPatient.Size = new System.Drawing.Size(120, 24);
+            this.btnSelectPatient.Text = "Select Patient...";
+            this.btnSelectPatient.Click += new System.EventHandler(this.BtnSelectPatient_Click);
+            this.lblSelectedPatient.Location = new System.Drawing.Point(15, 90);
+            this.lblSelectedPatient.Size = new System.Drawing.Size(250, 20);
+            this.lblSelectedPatient.Text = "No patient selected";
             //
             // lblAdmission
             //
@@ -428,7 +433,7 @@ namespace HospitalSystem.Views
             this.chkAutoCharges.AutoSize = true;
             this.chkAutoCharges.Checked = true;
             this.chkAutoCharges.CheckState = System.Windows.Forms.CheckState.Checked;
-            this.chkAutoCharges.Location = new System.Drawing.Point(15, 102);
+            this.chkAutoCharges.Location = new System.Drawing.Point(15, 122);
             this.chkAutoCharges.Name = "chkAutoCharges";
             this.chkAutoCharges.Size = new System.Drawing.Size(135, 17);
             this.chkAutoCharges.TabIndex = 7;
@@ -437,7 +442,7 @@ namespace HospitalSystem.Views
             // lblNotes
             //
             this.lblNotes.AutoSize = true;
-            this.lblNotes.Location = new System.Drawing.Point(280, 105);
+            this.lblNotes.Location = new System.Drawing.Point(280, 125);
             this.lblNotes.Name = "lblNotes";
             this.lblNotes.Size = new System.Drawing.Size(35, 13);
             this.lblNotes.TabIndex = 8;
@@ -445,7 +450,7 @@ namespace HospitalSystem.Views
             //
             // txtNotes
             //
-            this.txtNotes.Location = new System.Drawing.Point(325, 102);
+            this.txtNotes.Location = new System.Drawing.Point(325, 122);
             this.txtNotes.Name = "txtNotes";
             this.txtNotes.Size = new System.Drawing.Size(310, 20);
             this.txtNotes.TabIndex = 9;
@@ -455,7 +460,7 @@ namespace HospitalSystem.Views
             this.btnCreate.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(37)))), ((int)(((byte)(99)))), ((int)(((byte)(235)))));
             this.btnCreate.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnCreate.ForeColor = System.Drawing.Color.White;
-            this.btnCreate.Location = new System.Drawing.Point(650, 99);
+            this.btnCreate.Location = new System.Drawing.Point(650, 119);
             this.btnCreate.Name = "btnCreate";
             this.btnCreate.Size = new System.Drawing.Size(125, 30);
             this.btnCreate.TabIndex = 10;
@@ -1516,16 +1521,31 @@ namespace HospitalSystem.Views
         // -------------------- Loading --------------------
         private void LoadPatients()
         {
-            cmbPatient.DisplayMember = "Name";
-            cmbPatient.ValueMember = "Id";
-            cmbPatient.DataSource = HospitalData.ActivePatients().ToList();
+            selectedPatient = null;
+            patientSelector.SetPatients(HospitalData.ActivePatients());
+            LoadPatientLinks(0);
         }
-        
 
-        private void CmbPatient_SelectedIndexChanged(object sender, EventArgs e)
+        private void BtnSelectPatient_Click(object sender, EventArgs e)
         {
-            var patient = cmbPatient.SelectedItem as Patient;
-            int patientId = patient != null ? patient.Id : 0;
+            using (var picker = new PatientPickerDialog(HospitalData.ActivePatients(), "Select Patient for Billing"))
+            {
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                selectedPatient = picker.SelectedPatient;
+                lblSelectedPatient.Text = selectedPatient.FullName + " (" + selectedPatient.PatientNo + ")";
+                LoadPatientLinks(selectedPatient.Id);
+            }
+        }
+
+        private void PatientSelector_PatientSelected(object sender, EventArgs e)
+        {
+            selectedPatient = patientSelector.SelectedPatient;
+            if (selectedPatient != null)
+                LoadPatientLinks(selectedPatient.Id);
+        }
+
+        private void LoadPatientLinks(int patientId)
+        {
 
             var admissions = new List<KeyValuePair<int, string>> { new KeyValuePair<int, string>(0, "(none)") };
             admissions.AddRange(HospitalData.Admissions
@@ -1776,7 +1796,7 @@ namespace HospitalSystem.Views
 
         private void BtnCreate_Click(object sender, EventArgs e)
         {
-            var patient = cmbPatient.SelectedItem as Patient;
+            var patient = selectedPatient;
             if (patient == null)
             {
                 MessageBox.Show("Please select a patient.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);

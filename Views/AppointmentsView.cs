@@ -36,6 +36,7 @@ namespace HospitalSystem.Views
         private DateTimePicker dtpDate;
         private TextBox txtReason;
         private Button btnSchedule;
+        private Button btnSelectPatient;
 
         // Appointments list + actions
         private DataGridView grid;
@@ -89,6 +90,7 @@ namespace HospitalSystem.Views
             this.lblReason = new System.Windows.Forms.Label();
             this.txtReason = new System.Windows.Forms.TextBox();
             this.btnSchedule = new System.Windows.Forms.Button();
+            this.btnSelectPatient = new System.Windows.Forms.Button();
             this.lblScheduleTitle = new System.Windows.Forms.Label();
             this.lblList = new System.Windows.Forms.Label();
             this.actionBar = new System.Windows.Forms.Panel();
@@ -120,7 +122,7 @@ namespace HospitalSystem.Views
             this.root.Location = new System.Drawing.Point(10, 10);
             this.root.Name = "root";
             this.root.RowCount = 4;
-            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 372F));
+            this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 228F));
             this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 34F));
             this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 44F));
             this.root.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
@@ -138,7 +140,7 @@ namespace HospitalSystem.Views
             this.scheduleCard.Margin = new System.Windows.Forms.Padding(0, 0, 0, 8);
             this.scheduleCard.Name = "scheduleCard";
             this.scheduleCard.Padding = new System.Windows.Forms.Padding(12);
-            this.scheduleCard.Size = new System.Drawing.Size(1004, 364);
+            this.scheduleCard.Size = new System.Drawing.Size(1004, 220);
             this.scheduleCard.TabIndex = 0;
             //
             // lblScheduleTitle
@@ -155,8 +157,8 @@ namespace HospitalSystem.Views
             // scheduleLayout
             //
             this.scheduleLayout.ColumnCount = 2;
-            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 46F));
-            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 54F));
+            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 0F));
+            this.scheduleLayout.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
             this.scheduleLayout.Controls.Add(this.patientPicker, 0, 0);
             this.scheduleLayout.Controls.Add(this.fieldsPanel, 1, 0);
             this.scheduleLayout.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -164,7 +166,7 @@ namespace HospitalSystem.Views
             this.scheduleLayout.Name = "scheduleLayout";
             this.scheduleLayout.RowCount = 1;
             this.scheduleLayout.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            this.scheduleLayout.Size = new System.Drawing.Size(978, 308);
+            this.scheduleLayout.Size = new System.Drawing.Size(978, 164);
             this.scheduleLayout.TabIndex = 1;
             //
             // patientPicker
@@ -174,12 +176,14 @@ namespace HospitalSystem.Views
             this.patientPicker.Controls.Add(this.searchSpacer);
             this.patientPicker.Controls.Add(this.txtPatientSearch);
             this.patientPicker.Controls.Add(this.lblPickPatient);
+            this.fieldsPanel.Controls.Add(this.btnSelectPatient);
             this.patientPicker.Dock = System.Windows.Forms.DockStyle.Fill;
             this.patientPicker.Location = new System.Drawing.Point(3, 3);
             this.patientPicker.Name = "patientPicker";
             this.patientPicker.Padding = new System.Windows.Forms.Padding(0, 0, 10, 0);
             this.patientPicker.Size = new System.Drawing.Size(443, 302);
             this.patientPicker.TabIndex = 0;
+            this.patientPicker.Visible = false;
             //
             // lblPickPatient
             //
@@ -190,7 +194,7 @@ namespace HospitalSystem.Views
             this.lblPickPatient.Name = "lblPickPatient";
             this.lblPickPatient.Size = new System.Drawing.Size(433, 22);
             this.lblPickPatient.TabIndex = 0;
-            this.lblPickPatient.Text = "1. Search && select an active patient";
+            this.lblPickPatient.Text = "1. Select an active patient";
             //
             // txtPatientSearch
             //
@@ -231,6 +235,19 @@ namespace HospitalSystem.Views
             this.gridPatients.Size = new System.Drawing.Size(433, 249);
             this.gridPatients.TabIndex = 3;
             this.gridPatients.CellClick += new System.Windows.Forms.DataGridViewCellEventHandler(this.GridPatients_CellClick);
+            this.gridPatients.Visible = false;
+            this.txtPatientSearch.Visible = false;
+            this.searchSpacer.Visible = false;
+            //
+            // btnSelectPatient
+            //
+            this.btnSelectPatient.Location = new System.Drawing.Point(0, 8);
+            this.btnSelectPatient.Name = "btnSelectPatient";
+            this.btnSelectPatient.Size = new System.Drawing.Size(150, 32);
+            this.btnSelectPatient.TabIndex = 4;
+            this.btnSelectPatient.Text = "Select Patient...";
+            this.btnSelectPatient.UseVisualStyleBackColor = true;
+            this.btnSelectPatient.Click += new System.EventHandler(this.BtnSelectPatient_Click);
             //
             // fieldsPanel
             // Right column: the remaining appointment fields.
@@ -246,9 +263,9 @@ namespace HospitalSystem.Views
             this.fieldsPanel.Controls.Add(this.txtReason);
             this.fieldsPanel.Controls.Add(this.btnSchedule);
             this.fieldsPanel.Dock = System.Windows.Forms.DockStyle.Fill;
-            this.fieldsPanel.Location = new System.Drawing.Point(452, 3);
+            this.fieldsPanel.Location = new System.Drawing.Point(3, 3);
             this.fieldsPanel.Name = "fieldsPanel";
-            this.fieldsPanel.Size = new System.Drawing.Size(523, 302);
+            this.fieldsPanel.Size = new System.Drawing.Size(972, 158);
             this.fieldsPanel.TabIndex = 1;
             //
             // lblSelectedPatient
@@ -256,7 +273,7 @@ namespace HospitalSystem.Views
             this.lblSelectedPatient.AutoSize = true;
             this.lblSelectedPatient.Font = new System.Drawing.Font("Segoe UI", 9.5F, System.Drawing.FontStyle.Bold);
             this.lblSelectedPatient.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(185)))), ((int)(((byte)(28)))), ((int)(((byte)(28)))));
-            this.lblSelectedPatient.Location = new System.Drawing.Point(0, 4);
+            this.lblSelectedPatient.Location = new System.Drawing.Point(180, 10);
             this.lblSelectedPatient.MaximumSize = new System.Drawing.Size(460, 0);
             this.lblSelectedPatient.Name = "lblSelectedPatient";
             this.lblSelectedPatient.Size = new System.Drawing.Size(380, 17);
@@ -268,7 +285,7 @@ namespace HospitalSystem.Views
             this.lblDepartment.AutoSize = true;
             this.lblDepartment.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.lblDepartment.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
-            this.lblDepartment.Location = new System.Drawing.Point(0, 40);
+            this.lblDepartment.Location = new System.Drawing.Point(0, 52);
             this.lblDepartment.Name = "lblDepartment";
             this.lblDepartment.Size = new System.Drawing.Size(80, 15);
             this.lblDepartment.TabIndex = 1;
@@ -278,7 +295,7 @@ namespace HospitalSystem.Views
             //
             this.cmbDepartment.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbDepartment.Font = new System.Drawing.Font("Segoe UI", 10F);
-            this.cmbDepartment.Location = new System.Drawing.Point(0, 62);
+            this.cmbDepartment.Location = new System.Drawing.Point(0, 74);
             this.cmbDepartment.Name = "cmbDepartment";
             this.cmbDepartment.Size = new System.Drawing.Size(300, 25);
             this.cmbDepartment.TabIndex = 2;
@@ -288,7 +305,7 @@ namespace HospitalSystem.Views
             this.lblDoctor.AutoSize = true;
             this.lblDoctor.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.lblDoctor.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
-            this.lblDoctor.Location = new System.Drawing.Point(0, 96);
+            this.lblDoctor.Location = new System.Drawing.Point(325, 52);
             this.lblDoctor.Name = "lblDoctor";
             this.lblDoctor.Size = new System.Drawing.Size(130, 15);
             this.lblDoctor.TabIndex = 3;
@@ -298,7 +315,7 @@ namespace HospitalSystem.Views
             //
             this.cmbDoctor.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
             this.cmbDoctor.Font = new System.Drawing.Font("Segoe UI", 10F);
-            this.cmbDoctor.Location = new System.Drawing.Point(0, 118);
+            this.cmbDoctor.Location = new System.Drawing.Point(325, 74);
             this.cmbDoctor.Name = "cmbDoctor";
             this.cmbDoctor.Size = new System.Drawing.Size(300, 25);
             this.cmbDoctor.TabIndex = 4;
@@ -308,7 +325,7 @@ namespace HospitalSystem.Views
             this.lblDateTime.AutoSize = true;
             this.lblDateTime.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.lblDateTime.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
-            this.lblDateTime.Location = new System.Drawing.Point(0, 152);
+            this.lblDateTime.Location = new System.Drawing.Point(650, 52);
             this.lblDateTime.Name = "lblDateTime";
             this.lblDateTime.Size = new System.Drawing.Size(80, 15);
             this.lblDateTime.TabIndex = 5;
@@ -320,7 +337,7 @@ namespace HospitalSystem.Views
             this.dtpDate.CustomFormat = "yyyy-MM-dd HH:mm";
             this.dtpDate.Font = new System.Drawing.Font("Segoe UI", 10F);
             this.dtpDate.Format = System.Windows.Forms.DateTimePickerFormat.Custom;
-            this.dtpDate.Location = new System.Drawing.Point(0, 174);
+            this.dtpDate.Location = new System.Drawing.Point(650, 74);
             this.dtpDate.Name = "dtpDate";
             this.dtpDate.Size = new System.Drawing.Size(300, 25);
             this.dtpDate.TabIndex = 6;
@@ -330,7 +347,7 @@ namespace HospitalSystem.Views
             this.lblReason.AutoSize = true;
             this.lblReason.Font = new System.Drawing.Font("Segoe UI", 9F);
             this.lblReason.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(75)))), ((int)(((byte)(85)))), ((int)(((byte)(99)))));
-            this.lblReason.Location = new System.Drawing.Point(0, 208);
+            this.lblReason.Location = new System.Drawing.Point(0, 112);
             this.lblReason.Name = "lblReason";
             this.lblReason.Size = new System.Drawing.Size(45, 15);
             this.lblReason.TabIndex = 7;
@@ -339,7 +356,7 @@ namespace HospitalSystem.Views
             // txtReason
             //
             this.txtReason.Font = new System.Drawing.Font("Segoe UI", 10F);
-            this.txtReason.Location = new System.Drawing.Point(0, 230);
+            this.txtReason.Location = new System.Drawing.Point(0, 134);
             this.txtReason.Name = "txtReason";
             this.txtReason.Size = new System.Drawing.Size(360, 25);
             this.txtReason.TabIndex = 8;
@@ -352,7 +369,7 @@ namespace HospitalSystem.Views
             this.btnSchedule.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnSchedule.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
             this.btnSchedule.ForeColor = System.Drawing.Color.White;
-            this.btnSchedule.Location = new System.Drawing.Point(0, 268);
+            this.btnSchedule.Location = new System.Drawing.Point(375, 128);
             this.btnSchedule.Name = "btnSchedule";
             this.btnSchedule.Size = new System.Drawing.Size(200, 36);
             this.btnSchedule.TabIndex = 9;
@@ -583,13 +600,24 @@ namespace HospitalSystem.Views
             }
         }
 
+        private void BtnSelectPatient_Click(object sender, System.EventArgs e)
+        {
+            using (var picker = new PatientPickerDialog(HospitalData.ActivePatients(), "Select Patient for Appointment"))
+            {
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                selectedPatientId = picker.SelectedPatient.Id;
+                lblSelectedPatient.Text = "Selected patient:  " + picker.SelectedPatient.FullName + "  (" + picker.SelectedPatient.PatientNo + ")";
+                lblSelectedPatient.ForeColor = Color.FromArgb(5, 150, 105);
+            }
+        }
+
         // ===================== Actions =====================
         private void BtnSchedule_Click(object sender, EventArgs e)
         {
             // Patient: must be chosen from the list and still active.
             if (selectedPatientId == 0)
             {
-                MessageBox.Show("Please select a patient from the list on the left.", "Validation",
+                MessageBox.Show("Please click Select Patient and choose an active patient.", "Validation",
                     MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
@@ -649,7 +677,7 @@ namespace HospitalSystem.Views
         private void ResetSelectedPatient()
         {
             selectedPatientId = 0;
-            lblSelectedPatient.Text = "Selected patient:  (none — pick one from the list on the left)";
+            lblSelectedPatient.Text = "Selected patient:  (none — click Select Patient)";
             lblSelectedPatient.ForeColor = Color.FromArgb(185, 28, 28);
         }
 

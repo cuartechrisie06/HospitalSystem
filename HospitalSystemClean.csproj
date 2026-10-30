@@ -135,6 +135,12 @@
     <Compile Include="Views\AppointmentsView.cs">
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="Views\PatientPickerDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Views\PatientSelector.cs">
+      <SubType>UserControl</SubType>
+    </Compile>
     <Compile Include="Views\AdmissionsView.cs">
       <SubType>UserControl</SubType>
     </Compile>

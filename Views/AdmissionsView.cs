@@ -11,7 +11,10 @@ namespace HospitalSystem.Views
     {
         private DataGridView gridAdmissions;
         private DataGridView gridBeds;
-        private ComboBox cmbPatient;
+        private Button btnSelectPatient;
+        private Label lblSelectedPatient;
+        private PatientSelector patientSelector;
+        private Patient selectedPatient;
         private ComboBox cmbDoctor;
         private ComboBox cmbBed;
         private TextBox txtDiagnosis;
@@ -114,7 +117,9 @@ namespace HospitalSystem.Views
             this.btnWaitlist = new System.Windows.Forms.Button();
             this.title = new System.Windows.Forms.Label();
             this.lblP = new System.Windows.Forms.Label();
-            this.cmbPatient = new System.Windows.Forms.ComboBox();
+            this.btnSelectPatient = new System.Windows.Forms.Button();
+            this.lblSelectedPatient = new System.Windows.Forms.Label();
+            this.patientSelector = new HospitalSystem.Views.PatientSelector();
             this.lblD = new System.Windows.Forms.Label();
             this.cmbDoctor = new System.Windows.Forms.ComboBox();
             this.lblB = new System.Windows.Forms.Label();
@@ -143,7 +148,8 @@ namespace HospitalSystem.Views
             this.formPanel.Controls.Add(this.btnWaitlist);
             this.formPanel.Controls.Add(this.title);
             this.formPanel.Controls.Add(this.lblP);
-            this.formPanel.Controls.Add(this.cmbPatient);
+            this.formPanel.Controls.Add(this.btnSelectPatient);
+            this.formPanel.Controls.Add(this.lblSelectedPatient);
             this.formPanel.Controls.Add(this.lblD);
             this.formPanel.Controls.Add(this.cmbDoctor);
             this.formPanel.Controls.Add(this.lblB);
@@ -156,7 +162,7 @@ namespace HospitalSystem.Views
             this.formPanel.Location = new System.Drawing.Point(10, 10);
             this.formPanel.Name = "formPanel";
             this.formPanel.Padding = new System.Windows.Forms.Padding(15);
-            this.formPanel.Size = new System.Drawing.Size(1004, 215);
+            this.formPanel.Size = new System.Drawing.Size(1004, 235);
             this.formPanel.TabIndex = 0;
             //
             // title
@@ -201,13 +207,13 @@ namespace HospitalSystem.Views
             this.lblP.TabIndex = 1;
             this.lblP.Text = "Patient";
             //
-            // cmbPatient
-            //
-            this.cmbPatient.DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList;
-            this.cmbPatient.Location = new System.Drawing.Point(15, 65);
-            this.cmbPatient.Name = "cmbPatient";
-            this.cmbPatient.Size = new System.Drawing.Size(250, 21);
-            this.cmbPatient.TabIndex = 2;
+            this.btnSelectPatient.Location = new System.Drawing.Point(15, 65);
+            this.btnSelectPatient.Size = new System.Drawing.Size(120, 24);
+            this.btnSelectPatient.Text = "Select Patient...";
+            this.btnSelectPatient.Click += new System.EventHandler(this.BtnSelectPatient_Click);
+            this.lblSelectedPatient.Location = new System.Drawing.Point(15, 90);
+            this.lblSelectedPatient.Size = new System.Drawing.Size(250, 20);
+            this.lblSelectedPatient.Text = "No patient selected";
             //
             // lblD
             //
@@ -246,7 +252,7 @@ namespace HospitalSystem.Views
             // lblDiag
             //
             this.lblDiag.AutoSize = true;
-            this.lblDiag.Location = new System.Drawing.Point(15, 105);
+            this.lblDiag.Location = new System.Drawing.Point(15, 120);
             this.lblDiag.Name = "lblDiag";
             this.lblDiag.Size = new System.Drawing.Size(101, 13);
             this.lblDiag.TabIndex = 7;
@@ -254,7 +260,7 @@ namespace HospitalSystem.Views
             //
             // txtDiagnosis
             //
-            this.txtDiagnosis.Location = new System.Drawing.Point(15, 125);
+            this.txtDiagnosis.Location = new System.Drawing.Point(15, 140);
             this.txtDiagnosis.Name = "txtDiagnosis";
             this.txtDiagnosis.Size = new System.Drawing.Size(500, 20);
             this.txtDiagnosis.TabIndex = 8;
@@ -264,7 +270,7 @@ namespace HospitalSystem.Views
             this.btnAdmit.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(5)))), ((int)(((byte)(150)))), ((int)(((byte)(105)))));
             this.btnAdmit.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnAdmit.ForeColor = System.Drawing.Color.White;
-            this.btnAdmit.Location = new System.Drawing.Point(530, 122);
+            this.btnAdmit.Location = new System.Drawing.Point(530, 137);
             this.btnAdmit.Name = "btnAdmit";
             this.btnAdmit.Size = new System.Drawing.Size(130, 32);
             this.btnAdmit.TabIndex = 9;
@@ -277,7 +283,7 @@ namespace HospitalSystem.Views
             this.btnDischarge.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(220)))), ((int)(((byte)(38)))), ((int)(((byte)(38)))));
             this.btnDischarge.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnDischarge.ForeColor = System.Drawing.Color.White;
-            this.btnDischarge.Location = new System.Drawing.Point(670, 122);
+            this.btnDischarge.Location = new System.Drawing.Point(670, 137);
             this.btnDischarge.Name = "btnDischarge";
             this.btnDischarge.Size = new System.Drawing.Size(130, 32);
             this.btnDischarge.TabIndex = 10;
@@ -288,7 +294,7 @@ namespace HospitalSystem.Views
             // lblWaitlistHint
             //
             this.lblWaitlistHint.ForeColor = System.Drawing.Color.FromArgb(((int)(((byte)(107)))), ((int)(((byte)(114)))), ((int)(((byte)(128)))));
-            this.lblWaitlistHint.Location = new System.Drawing.Point(15, 160);
+            this.lblWaitlistHint.Location = new System.Drawing.Point(15, 175);
             this.lblWaitlistHint.Name = "lblWaitlistHint";
             this.lblWaitlistHint.Size = new System.Drawing.Size(500, 40);
             this.lblWaitlistHint.TabIndex = 13;
@@ -299,7 +305,7 @@ namespace HospitalSystem.Views
             this.btnWaitlist.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(217)))), ((int)(((byte)(119)))), ((int)(((byte)(6)))));
             this.btnWaitlist.FlatStyle = System.Windows.Forms.FlatStyle.Flat;
             this.btnWaitlist.ForeColor = System.Drawing.Color.White;
-            this.btnWaitlist.Location = new System.Drawing.Point(530, 165);
+            this.btnWaitlist.Location = new System.Drawing.Point(530, 180);
             this.btnWaitlist.Name = "btnWaitlist";
             this.btnWaitlist.Size = new System.Drawing.Size(130, 32);
             this.btnWaitlist.TabIndex = 11;
@@ -309,7 +315,7 @@ namespace HospitalSystem.Views
             //
             // btnAssignBed
             //
-            this.btnAssignBed.Location = new System.Drawing.Point(670, 165);
+            this.btnAssignBed.Location = new System.Drawing.Point(670, 180);
             this.btnAssignBed.Name = "btnAssignBed";
             this.btnAssignBed.Size = new System.Drawing.Size(130, 32);
             this.btnAssignBed.TabIndex = 12;
@@ -393,12 +399,9 @@ namespace HospitalSystem.Views
         private void LoadCombos()
         {
             // Not already admitted or on the waiting list.
-            cmbPatient.DisplayMember = "Name";
-            cmbPatient.ValueMember = "Id";
-            cmbPatient.DataSource = HospitalData.ActivePatients()
-                .Where(p => !HospitalData.HasActiveAdmission(p.Id))
-                .ToList();
-
+            selectedPatient = null;
+            patientSelector.SetPatients(HospitalData.ActivePatients()
+                .Where(p => !HospitalData.HasActiveAdmission(p.Id)));
             cmbDoctor.DisplayMember = "Name";
             cmbDoctor.ValueMember = "Id";
             cmbDoctor.DataSource = HospitalData.ActiveDoctors().ToList();
@@ -406,6 +409,23 @@ namespace HospitalSystem.Views
             cmbBed.DisplayMember = "Label";
             cmbBed.ValueMember = "Id";
             cmbBed.DataSource = HospitalData.AvailableBeds();
+        }
+
+        private void BtnSelectPatient_Click(object sender, EventArgs e)
+        {
+            var eligible = HospitalData.ActivePatients()
+                .Where(p => !HospitalData.HasActiveAdmission(p.Id));
+            using (var picker = new PatientPickerDialog(eligible, "Select Patient for Admission"))
+            {
+                if (picker.ShowDialog(this) != DialogResult.OK) return;
+                selectedPatient = picker.SelectedPatient;
+                lblSelectedPatient.Text = selectedPatient.FullName + " (" + selectedPatient.PatientNo + ")";
+            }
+        }
+
+        private void PatientSelector_PatientSelected(object sender, EventArgs e)
+        {
+            selectedPatient = patientSelector.SelectedPatient;
         }
 
         private void LoadAdmissions()
@@ -460,7 +480,7 @@ namespace HospitalSystem.Views
                 return;
             }
 
-            if (cmbPatient.SelectedValue == null || cmbDoctor.SelectedValue == null || cmbBed.SelectedValue == null)
+            if (selectedPatient == null || cmbDoctor.SelectedValue == null || cmbBed.SelectedValue == null)
             {
                 MessageBox.Show("Please select Patient, Doctor and an available Bed.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -477,7 +497,7 @@ namespace HospitalSystem.Views
             {
                 admission = HospitalData.AddAdmission(new Admission
                 {
-                    PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
+                    PatientId = selectedPatient.Id,
                     DoctorId = Convert.ToInt32(cmbDoctor.SelectedValue),
                     BedId = Convert.ToInt32(cmbBed.SelectedValue),
                     Diagnosis = txtDiagnosis.Text.Trim()
@@ -520,7 +540,7 @@ namespace HospitalSystem.Views
 
         private void BtnWaitlist_Click(object sender, EventArgs e)
         {
-            if (cmbPatient.SelectedValue == null || cmbDoctor.SelectedValue == null)
+            if (selectedPatient == null || cmbDoctor.SelectedValue == null)
             {
                 MessageBox.Show("Please select the Patient and Doctor.", "Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
@@ -537,7 +557,7 @@ namespace HospitalSystem.Views
 
             var admission = HospitalData.AddAdmission(new Admission
             {
-                PatientId = Convert.ToInt32(cmbPatient.SelectedValue),
+                PatientId = selectedPatient.Id,
                 DoctorId = Convert.ToInt32(cmbDoctor.SelectedValue),
                 BedId = 0,
                 Diagnosis = txtDiagnosis.Text.Trim()

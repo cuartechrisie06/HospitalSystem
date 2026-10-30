@@ -6,7 +6,7 @@ A Hospital Management System built with **C# Windows Forms** (.NET Framework 4.8
 
 - **Login** with accounts stored in the database
 - **Dashboard** – appointments (today and next 7 days), bed occupancy (overall and per ward), pending admissions (the waiting list, with how long each patient has waited), admitted patients, doctors on duty, and alerts.
-- **Alerts** – raised and cleared automatically by the other modules; there is no manual "new alert". Staff can *acknowledge* an alert, which hides it until the condition clears (it comes back if the situation gets worse). Current rules:
+- **Alerts** – raised and cleared automatically by the other modules; there is no manual "new alert". Staff can *acknowledge* an alert; it remains visible as acknowledged until the condition clears (and becomes active again if the situation gets worse). Current rules:
   - Admissions: high bed occupancy (80%+) / no beds left; ICU down to 1 or 0 beds; patients waiting for a bed (high priority after 4 hours, or as soon as a bed is free)
   - Doctors: a department with no doctor on duty
   - Appointments: an off-duty or deactivated doctor with patients still booked today; past appointments not marked completed or cancelled
